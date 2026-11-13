@@ -756,14 +756,9 @@ class BaselineRouter:
             if _has(t, "tuoi no", "tren 15") or re.search(
                 r"0\s*[–-]\s*7|8\s*[–-]\s*15", raw
             ):
-                buckets = ds.debt_age_buckets(debt_as_of)
-                if buckets is not None:
-                    return Answer(
-                        "list",
-                        [_round_money(value) for value in buckets],
-                        confidence=0.75,
-                        plan="debt_age_buckets",
-                    )
+                # Aging buckets mismatch golds systematically (0/2 train);
+                # abstain until the due-date allocation is fixed.
+                return Answer("abstain", plan="debt_age_buckets")
             if _has(
                 t, "bao nhieu khach", "so khach", "may khach", "bao nhieu nguoi"
             ) and not _has(t, "tra bot", "tra no", "thu duoc"):
@@ -2145,6 +2140,19 @@ class BaselineRouter:
 
         product = match_product(question, ds)
         if product and period is not None:
+            # Net import-minus-sales ("lay so nhap tru so ban").
+            # Must run before plain quantity: those answers are wrong here.
+            if _has(t, "nhap") and _has(t, "tru"):
+                purchased = ds.purchase_quantity(product, period)
+                sold = ds.product_quantity(period, product)
+                if purchased is not None and sold is not None:
+                    return Answer(
+                        "number",
+                        _round_money(purchased - sold),
+                        confidence=0.8,
+                        plan="import_minus_sales",
+                    )
+                return Answer("abstain", plan="import_minus_sales_no_data")
             price_words = _has(
                 t,
                 "gia ban",
