@@ -4091,11 +4091,36 @@ class Dataset:
             return None
         return float(df["amount"].sum())
 
+    def _cogs_series(self, df: pd.DataFrame) -> pd.Series:
+        """Cost of goods sold per line, robust to mixed pack/base grains.
+
+        Some ledgers record bulk rows with pack quantities but pack
+        unit_price/cost (24 goi x 348000/box). quantity x cost then
+        overstates COGS by the pack factor. Detect those rows by
+        k = quantity x unit_price / line_amount (>= 2.5 means bulk grain)
+        and use line_amount x cost / unit_price there instead. Rows with
+        a consistent grain keep the exact quantity x cost math.
+        """
+        qty = pd.to_numeric(df["quantity"], errors="coerce").fillna(0.0)
+        cost = pd.to_numeric(df["cost"], errors="coerce").fillna(0.0)
+        price = (
+            pd.to_numeric(df["unit_price"], errors="coerce").fillna(0.0)
+            if "unit_price" in df.columns
+            else pd.Series(0.0, index=df.index)
+        )
+        amount = pd.to_numeric(df["line_amount"], errors="coerce").fillna(0.0)
+        raw = qty * cost
+        denom = amount.where(amount > 0, float("nan"))
+        k = (qty * price / denom).fillna(1.0)
+        bulk = (k >= 2.5) & (price > 0) & (amount > 0) & (qty > 0)
+        corrected = (amount * cost / price.where(price > 0)).fillna(0.0)
+        return raw.where(~bulk, corrected)
+
     def gross_profit(self, period: Period | None = None) -> float | None:
         df = self.filtered_lines(period)
         if df.empty or "cost" not in df.columns:
             return None
-        cost = float((df["quantity"] * df["cost"]).sum())
+        cost = float(self._cogs_series(df).sum())
         if cost <= 0:
             return None
         revenue = float(df["line_amount"].sum())
@@ -4115,7 +4140,7 @@ class Dataset:
         if df.empty or "cost" not in df.columns:
             return []
         df = df.copy()
-        df["profit"] = df["line_amount"] - df["quantity"] * df["cost"]
+        df["profit"] = df["line_amount"] - self._cogs_series(df)
         return self._rank_products(df, "profit", k)
 
     def debt_customers(self, as_of: date | None = None) -> int:
