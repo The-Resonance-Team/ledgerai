@@ -1175,6 +1175,7 @@ class BaselineRouter:
                 and (
                     _has(t, "may moi", "may cu", "dien thoai", "phu kien")
                     or (_has(t, "may") and ds.brand_group_from_question(question))
+                    and not _has(t, "bao hanh")
                 )
             )
         ):
