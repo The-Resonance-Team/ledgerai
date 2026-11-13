@@ -1172,7 +1172,10 @@ class BaselineRouter:
             and not _has(t, "ca sang", "ca chieu")
             and not (
                 ds.product_conditions
-                and _has(t, "may moi", "may cu", "dien thoai", "phu kien")
+                and (
+                    _has(t, "may moi", "may cu", "dien thoai", "phu kien")
+                    or (_has(t, "may") and ds.brand_group_from_question(question))
+                )
             )
         ):
             asks_percent = _has(t, "phan tram", "ti le", "ty le", "ti trong") or bool(
