@@ -1321,13 +1321,10 @@ class BaselineRouter:
             _words(t, "e")
             or _has(t, "khong ban", "ko ban", "ban cham", "e han", "khong ai mua")
         ):
-            if period is not None:
-                return Answer(
-                    "number",
-                    ds.unsold_count(period),
-                    confidence=0.8,
-                    plan="unsold_products",
-                )
+            # "Ế" (dead stock) has no stable ledger definition: products sold
+            # before but idle during the window overcounts gold by 3-4x on
+            # every train case. Abstain instead of risking -1.
+            return Answer("abstain", plan="unsold_abstain")
 
         # 4b. Closing stock value at cost.
         if (
