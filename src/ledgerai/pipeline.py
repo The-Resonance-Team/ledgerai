@@ -1326,10 +1326,14 @@ class BaselineRouter:
             # every train case. Abstain instead of risking -1.
             return Answer("abstain", plan="unsold_abstain")
 
-        # 4b. Closing stock value at cost.
+        # 4b. Closing stock value at cost. "ton" needs a word boundary:
+        # "tổng" (total) contains it as a substring.
         if (
             _has(t, "gia von", "gia tri")
-            and _has(t, "ton", "trong kho", "tien hang")
+            and (
+                _words(t, "ton")
+                or _has(t, "ton kho", "ton cuoi", "trong kho", "tien hang")
+            )
             and _has(t, "bao nhieu", "bnhiu", "may")
         ):
             value = ds.inventory_value()
@@ -1867,6 +1871,8 @@ class BaselineRouter:
         if _has(
             t,
             "nhap hang",
+            "phieu nhap",
+            "don nhap",
             "tien nhap",
             "tien hang nhap",
             "gia tri nhap",
