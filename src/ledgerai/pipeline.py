@@ -1064,9 +1064,6 @@ class BaselineRouter:
         ):
             if period is None:
                 return Answer("abstain", plan="top_product")
-            if k > 1 and ds.conversions and ds.conversions[0]:
-                # Mixed pack/base units make multi-item rankings unreliable.
-                return Answer("abstain", plan="top_products_conversion")
             from .verifier import match_category
 
             category = match_category(question, ds)
@@ -1078,6 +1075,8 @@ class BaselineRouter:
                 top = ds.top_products(period, by="quantity", k=k)
             if not top:
                 return Answer("abstain", plan="top_product")
+            if ds.mixed_bulk_units([name for name, _ in top]):
+                return Answer("abstain", plan="top_products_mixed_units")
             if k > 1 or _has(t, "liet ke", "top", "danh sach"):
                 return Answer(
                     "list",

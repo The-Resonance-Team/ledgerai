@@ -2147,6 +2147,53 @@ class Dataset:
         )
         return ranked[:k]
 
+    # Base units measured by weight or volume. A quantity ranking that mixes
+    # these with discrete units is unreliable: bulk rows dominate by number
+    # while the reference answers rank discrete goods.
+    BULK_BASE_UNITS = frozenset(
+        {
+            "kg",
+            "g",
+            "gam",
+            "gram",
+            "m3",
+            "m2",
+            "l",
+            "lit",
+            "ml",
+            "tan",
+            "ta",
+            "yen",
+            "met khoi",
+            "met vuong",
+            "khoi",
+        }
+    )
+
+    def base_unit_of(self, product: str) -> str | None:
+        key = norm_key(product)
+        if not key:
+            return None
+        if not self.products.empty and "unit" in self.products.columns:
+            rows = self.products[self.products["product"].map(norm_key) == key]
+            if not rows.empty:
+                unit = str(rows.iloc[0]["unit"]).strip()
+                if unit:
+                    return unit
+        _, base_units, _ = self.conversions or ({}, {}, {})
+        return base_units.get(key)
+
+    def mixed_bulk_units(self, names: list[str]) -> bool:
+        classes = set()
+        for name in names:
+            unit = self.base_unit_of(name)
+            if not unit:
+                continue
+            classes.add(
+                "bulk" if norm_key(unit) in self.BULK_BASE_UNITS else "discrete"
+            )
+        return "bulk" in classes and "discrete" in classes
+
     def top_products(
         self, period: Period | None = None, by: str = "line_amount", k: int = 1
     ) -> list[tuple[str, float]]:
