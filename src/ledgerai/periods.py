@@ -32,6 +32,45 @@ def _month_end(year: int, month: int) -> date:
     return date(year, month, calendar.monthrange(year, month)[1])
 
 
+# Lunar New Year (mùng 1 Tết). The gold convention for "dịp Tết" is the
+# 17-day window [Tết − 7, Tết + 9] (23 tháng Chạp → mùng 9 Tết), verified
+# exact against train gold on both YoY and prior-window comparisons.
+TET_DATES = {
+    2024: date(2024, 2, 10),
+    2025: date(2025, 1, 29),
+    2026: date(2026, 2, 17),
+}
+
+TET_PRE_DAYS = 7
+TET_POST_DAYS = 9
+
+
+def tet_period(year: int) -> Period | None:
+    """The 17-day Tết season window for a lunar year."""
+    new_year = TET_DATES.get(year)
+    if new_year is None:
+        return None
+    return Period(
+        new_year - timedelta(days=TET_PRE_DAYS),
+        new_year + timedelta(days=TET_POST_DAYS),
+        f"dịp tết {year}",
+    )
+
+
+def is_tet_period(period: Period | None) -> bool:
+    if period is None:
+        return False
+    for year in TET_DATES:
+        expected = tet_period(year)
+        if (
+            expected is not None
+            and period.start == expected.start
+            and period.end == expected.end
+        ):
+            return True
+    return False
+
+
 def _month_range(year: int, month: int, today: date, clamp: bool = False) -> Period:
     start = date(year, month, 1)
     end = _month_end(year, month)
@@ -149,6 +188,27 @@ def resolve_period(text: str, as_of: date) -> Period | None:
     # "Tu dau nam den hom nay" is a range, not a single day.
     if "dau nam" in t or "tu dau nam" in t:
         return Period(date(today.year, 1, 1), today, "từ đầu năm")
+
+    # "Dịp Tết (năm ...)": the 17-day lunar season [Tết − 7, Tết + 9].
+    # Must run before year/month parsing ("tet 2026" has a bare year).
+    # The anchor is the CURRENT Tet when "năm nay" appears anywhere, even
+    # alongside "năm trước" (which then describes the comparison base).
+    if re.search(r"(?<![a-z0-9])tet(?![a-z0-9])", t):
+        year_match = re.search(r"\b(20[0-2]\d)\b", t)
+        if year_match:
+            year = int(year_match.group(1))
+        elif re.search(r"nam\s+nay", t):
+            year = today.year
+        elif re.search(
+            r"tet\s+(?:nam\s+)?(?:truoc|ngoai|roi|trc)|nam\s+(?:truoc|ngoai|roi)\s+(?:tet|den tet)",
+            t,
+        ):
+            year = today.year - 1
+        else:
+            year = today.year
+        tet = tet_period(year)
+        if tet is not None:
+            return tet
 
     if "hom nay" in t:
         return Period(today, today, "hôm nay")

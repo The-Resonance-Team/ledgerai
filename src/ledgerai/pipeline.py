@@ -12,7 +12,14 @@ from datetime import date, timedelta
 
 from .dataset import Dataset
 from .normalize import norm_key, parse_number, strip_diacritics
-from .periods import Period, extract_month_refs, previous_period, resolve_period
+from .periods import (
+    Period,
+    extract_month_refs,
+    is_tet_period,
+    previous_period,
+    resolve_period,
+    tet_period,
+)
 
 
 @dataclass
@@ -102,6 +109,21 @@ def _match_service(question: str, ds: Dataset) -> str | None:
         if len(key) >= 4 and key in q and len(key) > best_len:
             best, best_len = str(name), len(key)
     return best
+
+
+def _period_growth(
+    ds: Dataset, period: Period | None, prior: Period | None, metric: str
+) -> float | None:
+    """Percent change between two explicit periods (e.g., Tết YoY)."""
+    if period is None or prior is None:
+        return None
+    if metric == "orders":
+        current, old = ds.order_count(period), ds.order_count(prior)
+    else:
+        current, old = ds.revenue(period), ds.revenue(prior)
+    if not old:
+        return None
+    return round(100.0 * (current - old) / old, 2)
 
 
 def _count_k(text: str) -> int:
@@ -355,7 +377,13 @@ class BaselineRouter:
                 if bounds and previous.end < bounds[0]:
                     return Answer("unanswerable", plan="growth_no_prior_period")
                 if _is_yoy(raw, t, period):
-                    value = ds.growth_yoy(period, metric)
+                    if is_tet_period(period):
+                        # Same lunar window last year; a calendar shift
+                        # would miss Tết 2025 (verified exact on train).
+                        prior = tet_period(period.start.year - 1)
+                        value = _period_growth(ds, period, prior, metric)
+                    else:
+                        value = ds.growth_yoy(period, metric)
                     plan = "revenue_growth_yoy"
                 else:
                     value = ds.growth(period, metric)
@@ -922,7 +950,11 @@ class BaselineRouter:
                         if _has(t, "so don", "don hang", "so bill")
                         else "revenue"
                     )
-                    value = ds.growth_yoy(period, metric)
+                    if is_tet_period(period):
+                        prior = tet_period(period.start.year - 1)
+                        value = _period_growth(ds, period, prior, metric)
+                    else:
+                        value = ds.growth_yoy(period, metric)
                     if value is not None:
                         return Answer(
                             "percent",
