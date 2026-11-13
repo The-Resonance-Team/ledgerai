@@ -638,7 +638,7 @@ class Dataset:
             if not name_col:
                 for candidate in df.columns:
                     key = norm_key(candidate)
-                    if key in {"ho ten", "ten", "ten tho", "ten nhan vien"}:
+                    if key in {"ho ten", "ten", "ten goi", "ten tho", "ten nhan vien"}:
                         name_col = candidate
                         break
             rate_col = None
@@ -647,14 +647,26 @@ class Dataset:
                 if "hoa hong" in key or "commission" in key:
                     rate_col = candidate
                     break
-            if not name_col or not rate_col:
+            id_col = cols.get("employee_id")
+            if not id_col:
+                for candidate in df.columns:
+                    if norm_key(candidate) in {
+                        "ma nhan vien",
+                        "ma nv",
+                        "msnv",
+                        "employee id",
+                    }:
+                        id_col = candidate
+                        break
+            if not name_col:
                 continue
             out = pd.DataFrame(index=df.index)
             out["employee"] = df[name_col].astype(str).str.strip()
-            out["rate"] = _to_num(df[rate_col])
+            out["employee_id"] = df[id_col].astype(str).str.strip() if id_col else ""
+            out["rate"] = _to_num(df[rate_col]) if rate_col else float("nan")
             frames.append(out)
         if not frames:
-            return pd.DataFrame(columns=["employee", "rate"])
+            return pd.DataFrame(columns=["employee", "employee_id", "rate"])
         return pd.concat(frames, ignore_index=True)
 
     # Repair-shop tickets (Sua xe rulebook §6). Any table with a vehicle
@@ -3134,6 +3146,9 @@ class Dataset:
             tokens = df["employee"].map(norm_key).str.split().str[-1]
             mask = tokens.eq(last)
         if not mask.any():
+            for eid in self._employee_ids(employee):
+                mask = mask | df["employee_id"].astype(str).str.strip().eq(eid)
+        if not mask.any():
             return None
         return float(df[mask]["revenue"].sum())
 
@@ -3149,6 +3164,21 @@ class Dataset:
         grouped = df.groupby(name)["revenue"].sum().sort_values(ascending=False)
         return str(grouped.index[0])
 
+    def _employee_ids(self, employee: str) -> list[str]:
+        """Staff codes for a name via the employee master (name -> ID)."""
+        if self.employees is None or self.employees.empty:
+            return []
+        if "employee_id" not in self.employees.columns:
+            return []
+        key = norm_key(employee)
+        rows = self.employees[self.employees["employee"].map(norm_key) == key]
+        if rows.empty and key.split():
+            last = key.split()[-1]
+            rows = self.employees[
+                self.employees["employee"].map(norm_key).str.split().str[-1] == last
+            ]
+        return [str(v).strip() for v in rows["employee_id"].tolist() if str(v).strip()]
+
     def _employee_mask(self, df: pd.DataFrame, employee: str) -> pd.Series:
         key = norm_key(employee)
         mask = df["employee_id"].map(norm_key).eq(key) | df["employee"].map(
@@ -3162,6 +3192,9 @@ class Dataset:
             last = key.split()[-1]
             tokens = df["employee"].map(norm_key).str.split().str[-1]
             mask = tokens.eq(last)
+        if not mask.any():
+            for eid in self._employee_ids(employee):
+                mask = mask | df["employee_id"].astype(str).str.strip().eq(eid)
         return mask
 
     def employee_order_count(self, period: Period | None, employee: str) -> int | None:
@@ -3231,7 +3264,10 @@ class Dataset:
             ]
         if rows.empty:
             return None
-        return float(rows["rate"].iloc[0])
+        rate = rows["rate"].iloc[0]
+        if pd.isna(rate):
+            return None
+        return float(rate)
 
     def commission(self, period: Period | None, employee: str) -> float | None:
         rate = self.commission_rate(employee)
@@ -3268,8 +3304,10 @@ class Dataset:
             if rows.empty:
                 continue
             employee = str(rows["employee"].iloc[0])
-            rate = float(rows["rate"].iloc[0])
-            result.append((employee, float(revenue) * rate / 100.0))
+            rate = rows["rate"].iloc[0]
+            if pd.isna(rate):
+                continue
+            result.append((employee, float(revenue) * float(rate) / 100.0))
         return sorted(result, key=lambda item: item[1], reverse=True)
 
     def filtered_lines(
