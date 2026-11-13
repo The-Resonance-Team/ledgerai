@@ -40,9 +40,7 @@ def llm_eligible(question: str) -> bool:
         return False
     if re.search(r"(?:^|\s)top\s*\d", t):
         return False
-    if re.search(
-        r"\b\d{1,2}\s+(?:mat hang|san pham|hang|khach|mon|sp)\b", t
-    ):
+    if re.search(r"\b\d{1,2}\s+(?:mat hang|san pham|hang|khach|mon|sp)\b", t):
         return False
     if re.search(
         r"(?:mat hang|san pham|hang|khach|mon|sp|tho|nhan vien)\s+nao",
@@ -74,7 +72,50 @@ def match_product(question: str, ds: Dataset, min_len: int = 5) -> str | None:
         key = norm_key(name)
         if len(key) >= min_len and key in q and len(key) > best_len:
             best, best_len = str(name), len(key)
+    # Alias spellings (full names, nicknames) map back to the canonical name.
+    # Full aliases are longer than the question's short form, so accept a
+    # long consecutive word run as well ("samsung galaxy a56 5g").
+    for alias, canonical in (getattr(ds, "product_aliases", None) or {}).items():
+        if norm_key(canonical) == "phi phuc vu":
+            continue
+        if len(alias) >= min_len and alias in q:
+            score = len(alias)
+        else:
+            run_words, run_len = _word_run(alias, q)
+            # Runs shorter than this are noise ("size m", "op lung").
+            if run_words < 2 or run_len < 8:
+                continue
+            score = run_len
+        if score > best_len:
+            best, best_len = str(canonical), score
     return best
+
+
+def _word_run(a: str, b: str) -> tuple[int, int]:
+    """Longest consecutive word run shared by a and b. Returns (words, chars)."""
+    words, length, _ = _word_run_next(a, b)
+    return words, length
+
+
+def _word_run_next(a: str, b: str) -> tuple[int, int, str | None]:
+    """Like _word_run, plus the alias word right after a prefix run."""
+    wa, wb = a.split(), b.split()
+    if not wa or not wb:
+        return 0, 0, None
+    positions: dict[str, list[int]] = {}
+    for j, w in enumerate(wb):
+        positions.setdefault(w, []).append(j)
+    best_words, best_len, best_next = 0, 0, None
+    for i, w in enumerate(wa):
+        for j in positions.get(w, []):
+            k = 0
+            while i + k < len(wa) and j + k < len(wb) and wa[i + k] == wb[j + k]:
+                k += 1
+            if k > best_words:
+                best_words = k
+                best_len = len(" ".join(wa[i : i + k]))
+                best_next = wa[i + k] if i == 0 and i + k < len(wa) else None
+    return best_words, best_len, best_next
 
 
 def match_unit(question: str, ds: Dataset, min_len: int = 2) -> str | None:

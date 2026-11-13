@@ -205,6 +205,13 @@ class Dataset:
     drugs: pd.DataFrame = None  # type: ignore[assignment]
     customers: pd.DataFrame = None  # type: ignore[assignment]
     conversions: tuple = None  # type: ignore[assignment]
+    # Harvested master data (set in from_tables; empty dict when absent):
+    # - product_aliases: norm(alias spelling) -> canonical product name.
+    # - product_conditions: norm(product spelling) -> 'may moi'|'may cu'|'phu kien'.
+    # - gender_of_customer: norm(customer_id) -> 'nam'|'nu'.
+    product_aliases: dict = None  # type: ignore[assignment]
+    product_conditions: dict = None  # type: ignore[assignment]
+    gender_of_customer: dict = None  # type: ignore[assignment]
 
     @classmethod
     def load(cls, biz_dir: Path) -> "Dataset":
@@ -371,6 +378,12 @@ class Dataset:
             orders["customer_group"] = ""
         lines = cls._build_lines(line_tables, orders, profiles, conversions)
         products = cls._build_products(product_tables, lines, profiles)
+        # Masters swallowed by other roles (e.g. a conversion sheet that also
+        # carries the category column) still contribute categories, aliases
+        # and condition tags. Canonical = the name column overlapping lines.
+        products, master_aliases, master_conditions, gender_map = (
+            cls._harvest_product_masters(products, lines, tables, profiles)
+        )
         # Product masters often carry the name; order lines only carry the id.
         if (
             not products.empty
@@ -498,7 +511,7 @@ class Dataset:
                 .map(ingredient_map)
                 .fillna("")
             )
-        return cls(
+        ds = cls(
             business_id,
             orders,
             lines,
@@ -515,6 +528,10 @@ class Dataset:
             customers,
             conversions,
         )
+        ds.product_aliases = master_aliases
+        ds.product_conditions = master_conditions
+        ds.gender_of_customer = gender_map
+        return ds
 
     # --------------------------------------------------------------- ledgers
     @classmethod
@@ -1390,6 +1407,480 @@ class Dataset:
             columns=["product", "product_id", "price", "cost", "unit", "category"]
         )
 
+    # Master-data harvest: categories, alias spellings, condition tags and
+    # customer gender from any master table, whatever its inferred role
+    # (a conversion sheet often doubles as the product master).
+    CONDITION_VALUES = frozenset({"may moi", "may cu", "phu kien"})
+    GENDER_VALUES = frozenset({"nam", "nu"})
+    ALIAS_KEYS = frozenset(
+        {
+            "ten goi khac",
+            "ten khac",
+            "ten day du",
+            "ten thuong goi",
+            "alias",
+            "dien giai",
+        }
+    )
+
+    @classmethod
+    def _harvest_product_masters(
+        cls, products, lines, tables, profiles
+    ) -> tuple[pd.DataFrame, dict, dict, dict]:
+        aliases: dict[str, str] = {}
+        conditions: dict[str, str] = {}
+        gender_map: dict[str, str] = {}
+        ambiguous: set[str] = set()
+        line_names = set()
+        if not lines.empty and "product" in lines.columns:
+            line_names = set(lines["product"].map(norm_key).dropna())
+        for table in tables:
+            cols = profiles[id(table)].roles
+            df = table.df
+            if df.empty:
+                continue
+            norm_cols = {norm_key(str(c)): c for c in df.columns}
+            # ---- gender (customer masters) ----
+            gender_keys = {norm_key(k) for k in {"nam nu", "gioi tinh", "phai"}}
+            gender_col = next(
+                (c for key, c in norm_cols.items() if key in gender_keys),
+                None,
+            )
+            if gender_col is not None:
+                id_col = cols.get("customer_id") or next(
+                    (
+                        c
+                        for key, c in norm_cols.items()
+                        if key in {"ma kh", "ma khach", "ma khach hang", "ma_kh"}
+                    ),
+                    None,
+                )
+                if id_col is not None and id_col in df.columns:
+                    for cid, raw_gender in zip(
+                        df[id_col].astype(str), df[gender_col].astype(str)
+                    ):
+                        gender = norm_key(raw_gender)
+                        if gender in cls.GENDER_VALUES and cid.strip():
+                            gender_map[norm_key(cid)] = gender
+            # Only master-like tables below: skip anything order- or
+            # customer-bound (their ids/phones would be bogus aliases).
+            if "order_id" in cols or "customer" in cols or "customer_id" in cols:
+                continue
+            # ---- product masters ----
+            # Canonical column = a ten-like column preferred, else the
+            # distinct-string column overlapping the sales lines most
+            # (codes vs full names).
+            seen_cols: set = set()
+            candidates: list = []
+            profile_name = cols.get("product")
+            if profile_name is not None and profile_name in df.columns:
+                candidates.append(profile_name)
+                seen_cols.add(profile_name)
+            else:
+                ten_like = next(
+                    (
+                        c
+                        for key, c in norm_cols.items()
+                        if key.startswith("ten")
+                        or key in {"name", "hang hoa", "ten hang"}
+                    ),
+                    None,
+                )
+                if ten_like is not None:
+                    candidates.append(ten_like)
+                    seen_cols.add(ten_like)
+            for _key, col in norm_cols.items():
+                if col in seen_cols:
+                    continue
+                series = df[col].astype(str)
+                nonblank = series[series.str.strip() != ""]
+                if len(nonblank) >= 3 and nonblank.nunique() / len(nonblank) >= 0.5:
+                    candidates.append(col)
+            if not candidates:
+                continue
+            if line_names and len(candidates) > 1:
+                name_col = max(
+                    candidates,
+                    key=lambda col: df[col].map(norm_key).isin(line_names).sum(),
+                )
+            else:
+                name_col = candidates[0]
+            names = df[name_col].astype(str).str.strip()
+            # Category supplement.
+            cat_col = cols.get("category")
+            if (
+                cat_col is not None
+                and cat_col in df.columns
+                and not products.empty
+                and "category" in products.columns
+            ):
+                cat_map = (
+                    pd.DataFrame({"name": names, "cat": df[cat_col]})
+                    .assign(_key=lambda d: d["name"].map(norm_key))
+                    .query("_key != ''")
+                    .drop_duplicates(subset=["_key"])
+                    .set_index("_key")["cat"]
+                    .to_dict()
+                )
+                blank = products["category"].astype(str).str.strip() == ""
+                if blank.any():
+                    mapped = products.loc[blank, "product"].map(norm_key).map(cat_map)
+                    products.loc[blank, "category"] = mapped.fillna("")
+            # Alias + condition columns.
+            alias_cols = [
+                c
+                for key, c in norm_cols.items()
+                if c != name_col
+                and (
+                    key in cls.ALIAS_KEYS
+                    or key.startswith("ten goi")
+                    or (
+                        key
+                        not in {
+                            (cols.get("category") or "").lower(),
+                            "nhom",
+                            "hang",
+                            "brand",
+                            "thuong hieu",
+                        }
+                        and c != cat_col
+                    )
+                )
+            ]
+            # Only keep string-distinct columns as alternates (drops brands).
+            kept_alias_cols = []
+            for col in alias_cols:
+                if col not in df.columns:
+                    continue
+                series = df[col].astype(str)
+                nonblank = series[series.str.strip() != ""]
+                if len(nonblank) >= 3 and nonblank.nunique() / len(nonblank) >= 0.5:
+                    kept_alias_cols.append(col)
+            known_roles = {
+                norm_key(str(cols.get(role) or ""))
+                for role in (
+                    "product_id",
+                    "order_id",
+                    "customer_id",
+                    "employee_id",
+                    "supplier",
+                    "category",
+                    "unit",
+                    "factor",
+                    "price",
+                    "cost",
+                    "pack_unit",
+                    "base_unit",
+                    "date",
+                    "amount",
+                    "quantity",
+                )
+            }
+            kept_alias_cols = [
+                c
+                for c in kept_alias_cols
+                if norm_key(str(c)) not in known_roles
+                and norm_key(str(c))
+                not in {
+                    "hang",
+                    "brand",
+                    "thuong hieu",
+                    "nhom",
+                    "nha cung cap",
+                    "ncc",
+                    "nha san xuat",
+                    "nsx",
+                    "so size",
+                    "size",
+                    "co size",
+                    "kich co",
+                    "kich thuoc",
+                    "dung luong",
+                }
+            ]
+            condition_col = None
+            for key, col in norm_cols.items():
+                series = df[col].astype(str)
+                nonblank = {
+                    norm_key(value) for value in series[series.str.strip() != ""]
+                }
+                nonblank.discard("")
+                if len(nonblank) >= 1 and nonblank <= set(cls.CONDITION_VALUES):
+                    if len(series[series.str.strip() != ""]) >= 3:
+                        condition_col = col
+                        break
+            for _, row in df.iterrows():
+                canonical = str(row[name_col]).strip()
+                if not canonical:
+                    continue
+                forms = [canonical]
+                for col in kept_alias_cols:
+                    for part in re.split(r"[,;/]", str(row[col])):
+                        part = part.strip()
+                        if part and part != canonical:
+                            forms.append(part)
+                for form in forms:
+                    form_key = norm_key(form)
+                    if not form_key:
+                        continue
+                    if form_key in aliases and aliases[form_key] != canonical:
+                        ambiguous.add(form_key)
+                        continue
+                    aliases.setdefault(form_key, canonical)
+                if condition_col is not None:
+                    cond = norm_key(row[condition_col])
+                    if cond in cls.CONDITION_VALUES:
+                        for form in forms:
+                            form_key = norm_key(form)
+                            if form_key:
+                                conditions.setdefault(form_key, cond)
+        for form_key in ambiguous:
+            aliases.pop(form_key, None)
+            conditions.pop(form_key, None)
+        return products, aliases, conditions, gender_map
+
+    def product_name_set(self, name: str | None) -> set[str]:
+        """All known spellings of a product (canonical + aliases)."""
+        key = norm_key(name or "")
+        out = {key} if key else set()
+        for alias, canonical in (self.product_aliases or {}).items():
+            if alias == key:
+                out.add(norm_key(canonical))
+            elif norm_key(canonical) == key:
+                out.add(alias)
+        return out
+
+    def products_matching(self, phrase: str | None) -> list[str]:
+        """Canonical product names containing `phrase` (names or aliases)."""
+        key = norm_key(phrase or "")
+        if not key:
+            return []
+        universe: dict[str, str] = {}
+        if not self.products.empty and "product" in self.products.columns:
+            for name in self.products["product"].dropna().unique():
+                universe[norm_key(str(name))] = str(name)
+        if not self.lines.empty and "product" in self.lines.columns:
+            for name in self.lines["product"].dropna().unique():
+                universe.setdefault(norm_key(str(name)), str(name))
+        reverse: dict[str, list[str]] = {}
+        for alias, canonical in (self.product_aliases or {}).items():
+            reverse.setdefault(norm_key(canonical), []).append(alias)
+        matched = []
+        for name_key, name in universe.items():
+            haystacks = [name_key] + reverse.get(name_key, [])
+            if any(key in hay for hay in haystacks):
+                matched.append(name)
+        return matched
+
+    def group_from_question(
+        self, question: str, min_words: int = 2, min_chars: int = 8
+    ) -> list[str]:
+        """Canonical products sharing the longest word run with the question.
+
+        For model families split across rows ("iPhone 13" new + used,
+        "Samsung Galaxy A56 5G" 128G + 256G): returns every product tied for
+        the longest run instead of picking one.
+        """
+        from .verifier import _word_run, _word_run_next
+
+        q = norm_key(question)
+        universe: dict[str, str] = {}
+        if not self.products.empty and "product" in self.products.columns:
+            for name in self.products["product"].dropna().unique():
+                universe[norm_key(str(name))] = str(name)
+        if not self.lines.empty and "product" in self.lines.columns:
+            for name in self.lines["product"].dropna().unique():
+                universe.setdefault(norm_key(str(name)), str(name))
+        reverse: dict[str, list[str]] = {}
+        for alias, canonical in (self.product_aliases or {}).items():
+            reverse.setdefault(norm_key(canonical), []).append(alias)
+        alias_to_canon = {
+            alias: norm_key(canonical)
+            for alias, canonical in (self.product_aliases or {}).items()
+        }
+        # A run that continues into a different model ("iphone 13 pro max")
+        # must not count for the base model unless the question says so.
+        MODEL_SUFFIX = {"pro", "max", "plus", "ultra", "lite", "mini", "fe"}
+        qwords = set(q.split())
+        best_words, best_len = 0, 0
+        scored: list[tuple[int, int, int, str | None, str]] = []
+        for name_key, name in universe.items():
+            canon = alias_to_canon.get(name_key, name_key)
+            pairs = [(name_key, name_key in alias_to_canon)]
+            for alias_text in reverse.get(canon, []):
+                if alias_text != name_key:
+                    pairs.append((alias_text, True))
+            top_words, top_len, top_extra = 0, 0, 10**9
+            top_next: str | None = None
+            for text, is_alias in pairs:
+                if not is_alias:
+                    run_words, run_len = _word_run(text, q)
+                    if (run_words, run_len) > (top_words, top_len):
+                        top_words, top_len = run_words, run_len
+                        top_extra = len(text.split()) - run_words
+                        top_next = None
+                    if text in q:
+                        name_words, name_chars = len(text.split()), len(text)
+                        if (name_words, name_chars) > (top_words, top_len):
+                            top_words, top_len, top_extra = (
+                                name_words,
+                                name_chars,
+                                0,
+                            )
+                            top_next = None
+                else:
+                    run_words, run_len, next_word = _word_run_next(text, q)
+                    if (run_words, run_len) >= (top_words, top_len) and (
+                        run_words,
+                        run_len,
+                    ) != (0, 0):
+                        top_words, top_len, top_extra = (
+                            run_words,
+                            run_len,
+                            len(text.split()) - run_words,
+                        )
+                        top_next = next_word
+            scored.append((top_words, top_len, top_extra, top_next, name))
+            if (top_words, top_len) > (best_words, best_len):
+                best_words, best_len = top_words, top_len
+        if best_words < min_words or best_len < min_chars:
+            return []
+        # "iPhone 13" means every variant of the base model (storage, color,
+        # new/used) — but not "iPhone 13 Pro Max". Drop products whose run
+        # continues into another model unless the question says so.
+        group = [
+            (next_word, name)
+            for words, length, _extra, next_word, name in scored
+            if (words, length) == (best_words, best_len)
+        ]
+        filtered = [
+            name
+            for next_word, name in group
+            if next_word not in MODEL_SUFFIX or next_word in qwords
+        ]
+        return sorted({name for name in (filtered or [n for _, n in group])})
+
+    def brand_group_from_question(self, question: str) -> list[str]:
+        """Products sharing one distinctive word (brand) with the question."""
+        from .verifier import _word_run  # noqa: F401 (kept local, symmetrical)
+
+        q = norm_key(question)
+        stop = {
+            "thang",
+            "nam",
+            "tuan",
+            "ngay",
+            "hom",
+            "nay",
+            "truoc",
+            "nhat",
+            "may",
+            "chiec",
+            "ban",
+            "duoc",
+            "tong",
+            "bao",
+            "nhieu",
+            "bnhiu",
+            "tien",
+            "dthu",
+            "doanh",
+            "thu",
+            "cua",
+            "hang",
+            "tinh",
+            "so",
+            "chiem",
+            "phan",
+            "tram",
+            "chung",
+            "loai",
+            "moi",
+            "cu",
+        }
+        counts: dict[str, list[str]] = {}
+        for word in dict.fromkeys(q.split()):
+            if len(word) < 4 or word in stop:
+                continue
+            matched = self.products_matching(word)
+            if len(matched) >= 2:
+                counts[word] = matched
+        if not counts:
+            return []
+        best = max(counts, key=lambda w: (len(w), len(counts[w])))
+        return counts[best]
+
+    def lines_for_names(self, period, names: list[str] | set[str]) -> "pd.DataFrame":
+        df = self.filtered_lines(period)
+        if df.empty or not names:
+            return df.iloc[0:0]
+        wanted: set[str] = set()
+        for name in names:
+            wanted.update(self.product_name_set(name))
+        return df[df["product"].map(norm_key).isin(wanted)]
+
+    def revenue_group(self, period, names: list[str]) -> float:
+        return float(self.lines_for_names(period, names)["line_amount"].sum())
+
+    def quantity_group(self, period, names: list[str]) -> float | None:
+        df = self.lines_for_names(period, names)
+        if df.empty:
+            return None
+        metric = "base_quantity" if "base_quantity" in df.columns else "quantity"
+        return float(df[metric].sum())
+
+    def condition_line_names(self, wanted: set[str]) -> set[str]:
+        """Normalized line-product names carrying one of the conditions."""
+        conditions = self.product_conditions or {}
+        names = {key for key, cond in conditions.items() if cond in wanted}
+        if self.lines.empty or "product" not in self.lines.columns:
+            return names
+        line_keys = set(self.lines["product"].map(norm_key).dropna())
+        return {key for key in names if key in line_keys or True}
+
+    def lines_for_conditions(self, period, wanted: set[str]):
+        df = self.filtered_lines(period)
+        if df.empty:
+            return df.iloc[0:0]
+        conditions = self.product_conditions or {}
+        return df[df["product"].map(norm_key).map(conditions).isin(wanted)]
+
+    def revenue_condition(self, period, wanted: set[str]) -> float:
+        return float(self.lines_for_conditions(period, wanted)["line_amount"].sum())
+
+    def quantity_condition(self, period, wanted: set[str]) -> float | None:
+        df = self.lines_for_conditions(period, wanted)
+        if df.empty:
+            return None
+        metric = "base_quantity" if "base_quantity" in df.columns else "quantity"
+        return float(df[metric].sum())
+
+    def revenue_gender(self, period, gender: str) -> float | None:
+        """Revenue from orders of one gender ('nam'/'nu')."""
+        gender_map = self.gender_of_customer or {}
+        if not gender_map:
+            return None
+        df = self.valid_orders(period)
+        if df.empty or "customer_id" not in df.columns:
+            return None
+        key = norm_key(gender)
+        matched = df[
+            df["customer_id"].astype(str).str.strip().map(norm_key).map(gender_map)
+            == key
+        ]
+        if matched.empty or len(self.lines) == 0:
+            return None
+        ids = set(matched["order_id"])
+        lines = self.lines[
+            self.lines["order_id"].isin(ids)
+            & ~self.lines["status"].isin(["cancelled", "returned"])
+        ]
+        if period is not None:
+            lines = lines[lines["date"].apply(period.contains)]
+        if lines.empty:
+            return None
+        return float(lines["line_amount"].sum())
+
     # --------------------------------------------------------------- purchases
     @classmethod
     def _build_purchases(cls, purchase_tables, profiles):
@@ -1898,6 +2389,12 @@ class Dataset:
             key = norm_key(product)
             keys = df["product"].map(norm_key)
             exact = df[keys == key]
+            if exact.empty and key:
+                # Alias spellings: same product recorded under another name.
+                for spelling in ds.product_name_set(product):
+                    exact = df[keys == spelling]
+                    if not exact.empty:
+                        break
             if exact.empty and key:
                 # Partial product names: keep the longest contained match.
                 matches = [
