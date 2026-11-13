@@ -218,6 +218,8 @@ class Dataset:
     stock_ledger: pd.DataFrame = None  # type: ignore[assignment]
     installments: pd.DataFrame = None  # type: ignore[assignment]
     member_dates: list = None  # type: ignore[assignment]
+    # Price history: product_id -> sorted [(effective date, new price)].
+    price_history: dict = None  # type: ignore[assignment]
 
     @classmethod
     def load(cls, biz_dir: Path) -> "Dataset":
@@ -541,6 +543,7 @@ class Dataset:
         ds.lots, ds.lot_uses, ds.stock_ledger = cls._build_lots(tables)
         ds.installments = cls._build_installments(tables)
         ds.member_dates = cls._build_member_dates(tables)
+        ds.price_history = cls._build_price_history(tables, profiles)
         return ds
 
     # --------------------------------------------------------------- ledgers
@@ -1436,6 +1439,108 @@ class Dataset:
         if period is None:
             return len(self.member_dates)
         return sum(1 for day in self.member_dates if period.contains(day))
+
+    @classmethod
+    def _build_price_history(cls, tables, profiles) -> dict:
+        """Effective price changes: product_id -> sorted [(date, price)].
+
+        From price-history ledgers ('lich su gia'). Used to date a price
+        change the question quotes without an explicit date.
+        """
+        history: dict[str, list] = {}
+        for table in tables:
+            if "lich su gia" not in norm_key(table.name):
+                continue
+            cols = profiles[id(table)].roles
+            pid_col = cols.get("product_id")
+            date_col = cols.get("date")
+            price_col = cols.get("price")
+            norm_cols = {norm_key(str(c)): c for c in table.df.columns}
+            if not pid_col:
+                pid_col = next(
+                    (
+                        norm_cols[k]
+                        for k in ("ma hang hoa", "ma sp", "ma thuoc")
+                        if k in norm_cols
+                    ),
+                    None,
+                )
+            if not date_col:
+                date_col = next(
+                    (
+                        norm_cols[k]
+                        for k in ("ngay ap dung", "ngay hieu luc", "ngay")
+                        if k in norm_cols
+                    ),
+                    None,
+                )
+            if not price_col:
+                price_col = next(
+                    (
+                        norm_cols[k]
+                        for k in ("gia ban le", "gia moi", "gia")
+                        if k in norm_cols
+                    ),
+                    None,
+                )
+            if not pid_col or not date_col or not price_col:
+                continue
+            df = table.df
+            dates = _to_date(df[date_col])
+            prices = _to_num(df[price_col])
+            for pid, day, price in zip(
+                df[pid_col].astype(str).str.strip(), dates, prices
+            ):
+                if not pid or not _is_date(day) or pd.isna(price):
+                    continue
+                history.setdefault(pid, []).append((day, float(price)))
+        for entries in history.values():
+            entries.sort(key=lambda item: item[0])
+        return history
+
+    def product_ids_for_name(self, name: str) -> list[str]:
+        """Product ids whose recorded name matches, for history lookups."""
+        key = norm_key(name)
+        ids: set[str] = set()
+        for df in (self.products, self.lines):
+            if df is None or df.empty:
+                continue
+            if "product" not in df.columns or "product_id" not in df.columns:
+                continue
+            matched = df[df["product"].map(norm_key) == key]["product_id"]
+            ids.update(str(v).strip() for v in matched.tolist() if str(v).strip())
+        return sorted(ids)
+
+    def price_change_date(
+        self, product: str, new_price: float, as_of=None, increase: bool = True
+    ):
+        """Latest date the product's price changed to new_price (<= as_of).
+
+        Requires a previous entry on the other side (an actual change).
+        Returns None when the history is missing or ambiguous.
+        """
+        if not self.price_history:
+            return None
+        target = int(round(new_price))
+        candidates = []
+        for pid in self.product_ids_for_name(product):
+            entries = self.price_history.get(pid, [])
+            for i, (day, price) in enumerate(entries):
+                if int(round(price)) != target:
+                    continue
+                if as_of is not None and day > as_of:
+                    continue
+                if i == 0:
+                    continue
+                prev = entries[i - 1][1]
+                if increase and not prev < price:
+                    continue
+                if not increase and not prev > price:
+                    continue
+                candidates.append(day)
+        if not candidates:
+            return None
+        return max(candidates)
 
     @classmethod
     def _build_expenses(cls, tables, profiles, roles) -> pd.DataFrame:

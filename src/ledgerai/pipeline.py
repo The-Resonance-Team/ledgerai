@@ -371,18 +371,26 @@ class BaselineRouter:
             return Answer("unanswerable", plan="subjective_no_data")
 
         # Boolean revenue trend over consecutive months.
-        if _has(t, "tang lien tuc", "luon cao hon", "co tang lien tuc") and _has(
-            t, "doanh thu", "dthu"
-        ):
+        if _has(
+            t, "tang lien tuc", "luon cao hon", "deu cao hon", "co tang lien tuc"
+        ) and _has(t, "doanh thu", "dthu"):
             refs = extract_month_refs(raw, as_of)
             # Only answer when the months run ascending and consecutive in the
             # question ("th8, th9, th10"); two-part claims ("T7 cao hon T6,
             # roi T8 cao hon T7") need pairwise checks we cannot do.
+            # An explicit "tu X den/toi Y" range fills the months between.
             consecutive = len(refs) >= 2 and all(
                 (refs[i + 1][0] * 12 + refs[i + 1][1]) - (refs[i][0] * 12 + refs[i][1])
                 == 1
                 for i in range(len(refs) - 1)
             )
+            if (
+                not consecutive
+                and len(refs) == 2
+                and refs[-1] >= refs[0]
+                and re.search(r"tu\s+.+?\s+(?:den|toi)\s+", raw)
+            ):
+                consecutive = True
             if consecutive:
                 (y, m), (end_y, end_m) = refs[0], refs[-1]
                 months = []
@@ -534,6 +542,23 @@ class BaselineRouter:
             # Group fallback: "nhóm X" / brand families without a master
             # category ("Bỉm Bobby ... tổng số bịch bỉm", "máy Samsung ...").
             group = ds.group_from_question(question)
+            if not group:
+                # Short group names ("nhóm cà phê", 6 chars) miss the
+                # word-run floor. Accept a relaxed run only when it is
+                # explicitly named as "nhóm [hàng] X" in the question.
+                relaxed = ds.group_from_question(question, 1, 3)
+                phrase = re.search(
+                    r"nhom(?: hang)?\s+([a-z0-9 ]+?)(?:\s+(?:chiem|ti trong|dong gop|trong|bao|la|co|duoc)|$)",
+                    t,
+                )
+                want = phrase.group(1).strip() if phrase else ""
+                if (
+                    relaxed
+                    and want
+                    and len(want) >= 3
+                    and all(want in norm_key(name) for name in relaxed)
+                ):
+                    group = relaxed
             if group:
                 part = ds.revenue_group(period, group)
                 num_set = set(group)
@@ -624,10 +649,27 @@ class BaselineRouter:
             if any(_words(t, needle) for needle in needles):
                 payment_methods.append(needles)
         payment_keyword = payment_methods[0][0] if payment_methods else None
+        # Debt collection phrased with a debt needle ("thu hồi công nợ",
+        # "khách mua chịu", "ghi nợ thêm ... trả nợ") is debt semantics,
+        # not payment revenue: yield to the debt branch below.
+        if (
+            payment_methods
+            and all(needles[0] == "ghi no" for needles in payment_methods)
+            and _has(t, "thu hoi", "thu duoc", "tra no", "mua chiu", "thu tien no")
+        ):
+            return Answer("abstain", plan="debt_collection")
         if (
             len(payment_methods) >= 2
             and period is not None
-            and _has(t, "moi loai", "tung loai", "tung hinh thuc", "moi hinh thuc")
+            and _has(
+                t,
+                "moi loai",
+                "moi ben",
+                "tung loai",
+                "tung ben",
+                "tung hinh thuc",
+                "moi hinh thuc",
+            )
         ):
             # The reference lists values in the order the methods appear in
             # the question, not in a canonical method order.
@@ -656,7 +698,14 @@ class BaselineRouter:
                 )
             return Answer("abstain", plan="payment_revenue_list")
         if payment_keyword and period is not None:
-            if _has(t, "ti trong", "chiem"):
+            if _has(t, "ti trong", "chiem") or (
+                _has(raw, "%", "phan tram")
+                and _has(t, "doanh thu", "dthu", "tong")
+                and not _has(t, "so don", "don hang", "so bill")
+                and not _has(
+                    t, "tang", "giam", "hon", "kem", "thay doi", "so voi", "so sanh"
+                )
+            ):
                 share = ds.payment_share(
                     period, payment_keyword, synonyms=payment_methods[0]
                 )
@@ -1071,16 +1120,33 @@ class BaselineRouter:
 
             product = match_product(question, ds)
             days_match = re.search(
-                r"(\d{1,2})\s*ngay\s*(?:ke tu|ke tu ngay|sau|tinh tu)", t
+                r"(\d{1,2})\s*ngay\s*(?:ke tu|ke tu ngay|sau|tinh tu|tu\b)", t
             )
             date_match = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", raw)
-            if product and days_match and date_match:
+            day = None
+            if product and days_match:
+                if date_match:
+                    day = date(
+                        int(date_match.group(3)),
+                        int(date_match.group(2)),
+                        int(date_match.group(1)),
+                    )
+                else:
+                    # No explicit date: the new price quoted in the question
+                    # dates the change via the price-history ledger.
+                    price_match = re.search(r"len(?: gia)?\s*(\d[\d.,]*)", raw)
+                    if price_match:
+                        new_price = parse_number(price_match.group(1))
+                        if new_price:
+                            increase = not (
+                                _has(t, "giam gia")
+                                and not _has(t, "tang gia", "len gia")
+                            )
+                            day = ds.price_change_date(
+                                product, new_price, as_of, increase
+                            )
+            if product and days_match and day is not None:
                 n = int(days_match.group(1))
-                day = date(
-                    int(date_match.group(3)),
-                    int(date_match.group(2)),
-                    int(date_match.group(1)),
-                )
                 after = ds.product_quantity(
                     Period(day, day + timedelta(days=n - 1)), product
                 )
@@ -1112,12 +1178,15 @@ class BaselineRouter:
             )
         ):
             asks_percent = _has(t, "phan tram", "ti le", "ty le", "ti trong") or bool(
-                re.search(r"(?:bao nhieu|may|bn)\s*%", raw)
+                re.search(
+                    r"(?:bao nhieu|bao nhiu|bnhiu|bnhieu|may|mi|bn|nhiu)\s*%", raw
+                )
             )
             compares = _has(
                 t,
                 "tang truong",
                 "thay doi",
+                "tang giam",
                 "hon hay kem",
                 "hown hay kem",
                 "cao hon",
@@ -1132,6 +1201,7 @@ class BaselineRouter:
                     t,
                     "thay doi",
                     "tang truong",
+                    "tang giam",
                     "hon hay kem",
                     "tang bao nhieu",
                     "giam bao nhieu",

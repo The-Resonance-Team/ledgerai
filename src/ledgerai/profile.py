@@ -74,7 +74,18 @@ _ROLE_HINTS: list[tuple[str, tuple[str, ...]]] = [
             "ghi chu trang thai",
         ),
     ),
-    ("channel", ("kenh ban", "kenh", "channel", "hinh thuc ban", "nguon")),
+    (
+        "channel",
+        (
+            "kenh ban",
+            "kenh",
+            "channel",
+            "hinh thuc ban",
+            "nguon",
+            "loai ban",
+            "ban qua",
+        ),
+    ),
     ("paid", ("da tra", "da thanh toan", "khach da tra", "khach tra", "paid")),
     (
         "payment",
