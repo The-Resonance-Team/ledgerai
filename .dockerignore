@@ -1,0 +1,9 @@
+.venv
+dist
+eval/run_holdout_*
+eval/run_llm_*
+eval/run_llm80_*
+eval/predict_*
+data/raw/public_test
+**/__pycache__
+**/*.pyc

@@ -1,0 +1,44 @@
+LedgerAI — final numbers (2026-11-13)
+
+Deterministic router:
+  Main holdout:   PA 0.8915  correct 493  wrong 0  abstain 60  coverage 89.2%  precision 100%
+  Schema holdout: PA 0.8354  correct 595  wrong 1  abstain 115 coverage 83.8%  precision 99.8%
+
+LLM + verifier (gated: no list/name questions):
+  Main holdout:   PA 0.9078  correct 502  wrong 0  abstain 51  coverage 90.8%  precision 100%
+  Schema holdout: PA 0.8481  correct 604  wrong 1  abstain 106 coverage 85.1%  precision 99.8%
+
+Runs:
+  main deterministic:   eval/run_holdout_v52
+  schema deterministic: eval/run_holdout_schema21
+  main LLM gated:       eval/run_llm_main_v52
+  schema LLM gated:     eval/run_llm_schema_v52
+
+Public test (deterministic): 699/1000 answered, 0 format errors, 1000 logs.
+Model: Gemma 4 12B, vLLM 0.33.0, temperature 0, max_tokens 512.
+Runtime guard: LEDGERAI_BUDGET_S=18000 (5h), then deterministic fallback.
+
+Image: zaic2026_datamate_ledgerai:final
+  Architecture: linux/amd64
+  Uncompressed: 49,566,600,938 bytes (49.6GB, limit 100GB)
+  Build: docker/Dockerfile.rebuild layered on the validated :test image
+         (vLLM 0.33.0 base + Gemma 4 12B weights), no registry access.
+  Deterministic offline smoke test: 8/8 answers, 8/8 logs, format valid.
+  Pending: native A6000 GPU + LLM + 2-run determinism.
+
+Submission archive:
+  File: bvpt3:~/ledgerai/dist/zaic2026_datamate_ledgerai_final.tar.gz
+  Local record: dist/zaic2026_datamate_ledgerai_final.tar.gz.{md5,sha256,size}
+  Compressed: 30,008,998,850 bytes
+  MD5:    7bd0684500b5b2f57eb544fae8e98217
+  SHA256: 3b1f094f38e4319a18893ca4569578b0bb7152e224408c8ffe0a2981b66cf634
+  Uncompressed image: 49,566,600,938 bytes
+  gzip -t: OK
+
+Source archive:
+  File: dist/ledgerai_source_20261113.tar.gz
+  SHA256: 4d66221a2b438cd179bc68baaeac2f66c5c0fc1754af6704f5a783c81626e122
+  File list + hashes: dist/FREEZE.sha256
+
+Image tar location on build host:
+  bvpt3:~/ledgerai/dist/zaic2026_datamate_ledgerai_final.tar.gz

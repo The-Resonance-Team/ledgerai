@@ -1,0 +1,1707 @@
+"""Conservative baseline router: question -> deterministic metric -> answer.
+
+The baseline answers only narrow, unambiguous families. Everything else
+abstains, because a wrong answer costs -1 while abstaining costs 0.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from datetime import date
+
+from .dataset import Dataset
+from .normalize import norm_key, parse_number, strip_diacritics
+from .periods import extract_month_refs, previous_period, resolve_period
+
+
+@dataclass
+class Answer:
+    type: str
+    value: object = None
+    confidence: float = 0.0
+    plan: str = ""
+    reason: str = ""
+
+    def to_json(self, qid: str) -> dict:
+        out = {"id": qid, "type": self.type}
+        if self.type not in {"abstain", "unanswerable"}:
+            out["answer"] = self.value
+        return out
+
+
+def _has(text: str, *keys: str) -> bool:
+    return any(k in text for k in keys)
+
+
+def _words(text: str, *words: str) -> bool:
+    return any(
+        re.search(rf"(?<![a-z0-9]){re.escape(word)}(?![a-z0-9])", text)
+        for word in words
+    )
+
+
+def _has_period(text: str) -> bool:
+    return bool(
+        re.search(
+            r"hom nay|hom qua|hnay|hqua|hwa|bua qua|bua hom qua|bua nay|hom ni|"
+            r"thang|thang ni|th nay|th truoc|th roi|tuan|quy|ngay|nam|nam ni|gan nhat|dau nam|tet|"
+            r"\d{1,2}[-/]\d{4}|\d{1,2}/\d{2}(?!\d)|\bth\s*\d{1,2}\b",
+            text,
+        )
+    )
+
+
+def _count_k(text: str) -> int:
+    m = re.search(
+        r"(?:top|liet ke|lay|cho|tim)\s*(?<![0-9])(\d{1,2})(?![0-9/])\s*"
+        r"(?:mat hang|mawtj hang|món|mon|san pham|hang|khach)?",
+        text,
+    )
+    if not m:
+        m = re.search(
+            r"(?<![0-9])(\d{1,2})(?![0-9/])\s*"
+            r"(?:mat hang|mawtj hang|món|mon|san pham|hangf|hang|khach)",
+            text,
+        )
+    if m:
+        return max(1, min(50, int(m.group(1))))
+    return 1
+
+
+def _round_money(value: float) -> int:
+    return int(round(value))
+
+
+_AMOUNT = r"(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\s*(k|nghin|nghìn|tr|trieu|triệu)?"
+
+
+def _amount_value(text: str, start: int) -> float | None:
+    m = re.match(r"\s*" + _AMOUNT, text[start:])
+    if not m:
+        return None
+    value = parse_number(m.group(0))
+    if value is None or value < 1000:
+        return None
+    return value
+
+
+def _money_thresholds(raw: str) -> tuple[float | None, float | None]:
+    """Read revenue thresholds such as 'từ 55.000 trở lên' or 'dưới 100.000'."""
+    lower: float | None = None
+    upper: float | None = None
+
+    m = re.search(
+        r"(?:tu|dat|it nhat)\s+(?:muc\s*)?(?:dthu\s*|doanh thu\s*)?(?:tu\s*)?",
+        raw,
+    )
+    if m:
+        value = _amount_value(raw, m.end())
+        if value is not None:
+            lower = value
+    if lower is None:
+        m = re.search(r"(?:≥|>=)\s*(?:muc\s*)?", raw)
+        if m:
+            lower = _amount_value(raw, m.end())
+    if lower is None:
+        m = re.search(r"(?:tren|hon|qua)\s+(?:muc\s*)?", raw)
+        if m:
+            value = _amount_value(raw, m.end())
+            if value is not None:
+                lower = value + 1  # "trên N" does not include N (rulebook §2)
+    if lower is None:
+        m = re.search(r"(?:duoi|nho hon)\s+(?:muc\s*)?", raw)
+        if m:
+            value = _amount_value(raw, m.end())
+            if value is not None:
+                upper = value - 1
+    return lower, upper
+
+
+def _match_inventory(question: str, ds: Dataset) -> str | None:
+    if ds.inventory is None or ds.inventory.empty:
+        return None
+    q = norm_key(question)
+    best: str | None = None
+    best_len = 0
+    for name in ds.inventory["product"].dropna().unique():
+        key = norm_key(name)
+        if len(key) >= 4 and key in q and len(key) > best_len:
+            best, best_len = str(name), len(key)
+    return best
+
+
+# Filters the baseline cannot apply. A revenue question with one of these
+# keywords must abstain instead of returning the unfiltered total.
+_FILTER_WORDS = (
+    "mat hang",
+    "san pham",
+    "hang hoa",
+    "thuoc",
+    "hoat chat",
+    "nhom hang",
+    "nhom ",
+    "khach hang",
+    "khach ",
+    "nhan vien",
+    "hinh thuc",
+    "kenh",
+    "shopee",
+    "tiktok",
+    "cod",
+    "chuyen khoan",
+    "tien mat",
+    "ca sang",
+    "ca chieu",
+    "the loai",
+    "loai hang",
+    "nha cung cap",
+    "zalo",
+    "tai quay",
+    "quay",
+    "khong ke don",
+    "ke don",
+    "hoat chat",
+    "thanh toan",
+    "cong no",
+    "tra truoc",
+    "tra sau",
+)
+
+_BOOLEAN_WORDS = (
+    "co tang lien tuc",
+    "tang lien tuc",
+    "co luon cao hon",
+    "luon cao hon",
+    "co phai",
+    "dung khong",
+    "phai khong",
+    "co dung",
+    "tang hay giam",
+    "cao hon khong",
+    "thap hon khong",
+)
+
+
+class BaselineRouter:
+    def answer(self, question: str, as_of: date, ds: Dataset) -> Answer:
+        raw = strip_diacritics(str(question or "")).lower()
+        # Frequent misspellings in the question set.
+        raw = re.sub(r"\b(toonf|tonf)\b", "ton", raw)
+        raw = re.sub(r"\b(tieenf|tienf)\b", "tien", raw)
+        raw = re.sub(r"\b(treen)\b", "tren", raw)
+        raw = re.sub(r"\b(thangs)\b", "thang", raw)
+        raw = re.sub(r"\b(quys)\b", "quy", raw)
+        raw = re.sub(r"\b(nhaats)\b", "nhat", raw)
+        raw = re.sub(r"\b(quaan)\b", "quan", raw)
+        raw = re.sub(r"\b(mooix)\b", "moi", raw)
+        raw = re.sub(r"\b(leen)\b", "len", raw)
+        raw = re.sub(r"\b(sangs)\b", "sang", raw)
+        raw = re.sub(r"\b(ddown)\b", "don", raw)
+        raw = re.sub(r"\b(nhoms)\b", "nhom", raw)
+        raw = re.sub(r"\b(khachs)\b", "khach", raw)
+        t = norm_key(raw)
+        period = resolve_period(raw, as_of) if _has_period(raw) else None
+        k = _count_k(t)
+        if (
+            period is not None
+            and not _words(t, "ton")
+            and not _has(t, "trong kho", "con lai")
+        ):
+            date_range = ds.date_range()
+            if date_range and (
+                period.end < date_range[0] or period.start > date_range[1]
+            ):
+                return Answer("unanswerable", plan="outside_data_range")
+
+        # Boolean revenue trend over consecutive months.
+        if _has(t, "tang lien tuc", "luon cao hon", "co tang lien tuc") and _has(
+            t, "doanh thu", "dthu"
+        ):
+            refs = extract_month_refs(raw, as_of)
+            if len(refs) >= 2:
+                (y, m), (end_y, end_m) = refs[0], refs[-1]
+                months = []
+                while (y, m) <= (end_y, end_m) and len(months) <= 24:
+                    months.append((y, m))
+                    m += 1
+                    if m == 13:
+                        m = 1
+                        y += 1
+                values = [
+                    ds.revenue(resolve_period(f"thang {mo}/{yr}", as_of))
+                    for yr, mo in months
+                ]
+                increasing = all(
+                    values[i + 1] > values[i] for i in range(len(values) - 1)
+                )
+                return Answer(
+                    "boolean",
+                    bool(increasing),
+                    confidence=0.8,
+                    plan="revenue_trend_boolean",
+                )
+
+        # Boolean trend questions are not handled by the baseline.
+        if _has(t, *_BOOLEAN_WORDS) and not _has(t, "ca sang", "ca chieu"):
+            return Answer("abstain", plan="boolean_trend")
+
+        # Channel revenue / share (Zalo OA, at the counter, phone).
+        if period is not None and _has(t, "zalo", "tai quay", "dien thoai"):
+            found: list[tuple[int, str]] = []
+            for needle, value in (
+                ("zalo", "zalo"),
+                ("tai quay", "store"),
+                ("dien thoai", "phone"),
+            ):
+                pos = t.find(needle)
+                if pos >= 0:
+                    found.append((pos, value))
+            found.sort()
+            if len(found) >= 2 and (_has(t, " va ", " voi ") or "," in str(question)):
+                values = [ds.revenue_channel(period, value) for _, value in found]
+                if all(value is not None for value in values):
+                    return Answer(
+                        "list",
+                        [_round_money(value) for value in values],
+                        confidence=0.75,
+                        plan="channel_revenue_list",
+                    )
+            channel = found[0][1] if found else "zalo"
+            if _has(t, "ti trong", "chiem"):
+                share = ds.channel_share(period, channel)
+                if share is not None:
+                    return Answer(
+                        "percent",
+                        share,
+                        confidence=0.8,
+                        plan="channel_revenue_share",
+                    )
+            if _has(t, "doanh thu", "dthu", "tien", "ban"):
+                value = ds.revenue_channel(period, channel)
+                if value is not None:
+                    return Answer(
+                        "number",
+                        _round_money(value),
+                        confidence=0.8,
+                        plan="channel_revenue",
+                    )
+
+        # Category share of revenue, e.g. "nhóm điện chiếm bao nhiêu %".
+        if _has(t, "chiem", "ti trong", "dong gop") and period is not None:
+            from .verifier import match_category
+
+            category = match_category(question, ds)
+            if category:
+                share = ds.revenue_share(category, period)
+                if share is not None:
+                    return Answer(
+                        "percent",
+                        share,
+                        confidence=0.8,
+                        plan="category_revenue_share",
+                    )
+
+        # Profit and expenses.
+        if period is not None and _has(
+            t,
+            "lai gop",
+            "lai rong",
+            "loi nhuan",
+            "loi that",
+            "lai that",
+            "loi nhieu",
+            "lai nhieu",
+        ):
+            if _has(t, "san pham", "mat hang", "mon", "hang nao", "sp nao") and _has(
+                t, "nhat", "cao nhat", "nhieu nhat"
+            ):
+                top = ds.top_products_profit(period, k=k)
+                if top:
+                    if k > 1:
+                        return Answer(
+                            "list",
+                            [name for name, _ in top],
+                            confidence=0.75,
+                            plan="top_products_profit",
+                        )
+                    return Answer(
+                        "string",
+                        top[0][0],
+                        confidence=0.75,
+                        plan="top_product_profit",
+                    )
+            if _has(
+                t, "lai rong", "loi that", "lai that", "tru chi phi", "trừ chi phí"
+            ):
+                value = ds.net_profit(period)
+            else:
+                value = ds.gross_profit(period)
+            if value is not None:
+                return Answer(
+                    "number",
+                    _round_money(value),
+                    confidence=0.75,
+                    plan="profit",
+                )
+        if (
+            period is not None
+            and _has(t, "chi phi", "chi phi")
+            and _has(t, "bao nhieu", "bnhiu", "tong", "het")
+            and not _has(t, "lai", "loi")
+        ):
+            value = ds.expense_total(period)
+            if value is not None:
+                return Answer(
+                    "number",
+                    _round_money(value),
+                    confidence=0.8,
+                    plan="expense_total",
+                )
+
+        # Payment-method revenue and share.
+        payment_keyword = None
+        for needle, keyword in (
+            ("chuyen khoan", "chuyen khoan"),
+            ("tien mat", "tien mat"),
+            ("vi dien tu", "vi dien tu"),
+            ("the tin dung", "the"),
+            ("the ngan hang", "the"),
+            ("momo", "momo"),
+            ("zalo pay", "zalo"),
+            ("cod", "cod"),
+        ):
+            if needle in t:
+                payment_keyword = keyword
+                break
+        if payment_keyword and period is not None:
+            if _has(t, "ti trong", "chiem"):
+                share = ds.payment_share(period, payment_keyword)
+                if share is not None:
+                    return Answer(
+                        "percent",
+                        share,
+                        confidence=0.8,
+                        plan="payment_share",
+                    )
+            if _has(t, "doanh thu", "dthu", "tien", "ban"):
+                value = ds.revenue_payment(period, payment_keyword)
+                if value is not None:
+                    return Answer(
+                        "number",
+                        _round_money(value),
+                        confidence=0.8,
+                        plan="payment_revenue",
+                    )
+
+        # Discounts given to customers.
+        if (
+            period is not None
+            and _has(t, "giam gia", "voucher", "chiet khau", "giam cho khach")
+            and _has(t, "bao nhieu", "bnhiu", "tong", "het")
+        ):
+            value = ds.discount_total(period)
+            if value is not None:
+                return Answer(
+                    "number",
+                    _round_money(value),
+                    confidence=0.8,
+                    plan="discount_total",
+                )
+
+        # Debt summaries.
+        debt_as_of = period.end if period is not None else as_of
+        if _words(t, "no") or _has(t, "cong no"):
+            if _has(t, "kem so tien", "so tien cua tung", "bang 3 khach"):
+                return Answer("abstain", plan="debt_detail_table")
+            if _has(t, "thu hoi", "thu duoc", "tra no", "thu tien no", "nop"):
+                return Answer("abstain", plan="debt_collection")
+            if _has(t, "tuoi no", "tren 15") or re.search(
+                r"0\s*[–-]\s*7|8\s*[–-]\s*15", raw
+            ):
+                buckets = ds.debt_age_buckets(debt_as_of)
+                if buckets is not None:
+                    return Answer(
+                        "list",
+                        [_round_money(value) for value in buckets],
+                        confidence=0.75,
+                        plan="debt_age_buckets",
+                    )
+            if _has(
+                t, "bao nhieu khach", "so khach", "may khach", "bao nhieu nguoi"
+            ) and not _has(t, "tra bot", "tra no", "thu duoc"):
+                return Answer(
+                    "number",
+                    ds.debt_customers(debt_as_of),
+                    confidence=0.8,
+                    plan="debt_customers",
+                )
+            if _has(t, "top", "liet ke", "danh sach") and _has(t, "khach"):
+                if _has(t, "kem so tien", "so no cua tung", "va so no"):
+                    return Answer("abstain", plan="top_debtors_detail")
+                top = ds.top_debtors(debt_as_of, k=k)
+                if top:
+                    return Answer(
+                        "list",
+                        [name for name, _ in top],
+                        confidence=0.75,
+                        plan="top_debtors",
+                    )
+                return Answer("abstain", plan="top_debtors")
+            if _has(
+                t, "tong", "bao nhieu tien", "con lai", "con no", "no con lai"
+            ) and not _has(t, "tra bot", "tra no", "thu duoc", "nop"):
+                return Answer(
+                    "number",
+                    _round_money(ds.debt_total(debt_as_of)),
+                    confidence=0.8,
+                    plan="debt_total",
+                )
+
+        # Delivery rounds.
+        if _has(
+            t,
+            "giao hang",
+            "giao cho khach",
+            "xe giao",
+            "xe cho",
+            "da giao",
+            "cho giao",
+        ) and _has(
+            t,
+            "dot giao",
+            "luot giao",
+            "chuyen giao",
+            "dot hang",
+            "so dot",
+            "so chuyen",
+            "may dot",
+            "bn dot",
+        ):
+            count = ds.delivery_count(period)
+            if count is not None:
+                return Answer("number", count, confidence=0.8, plan="delivery_count")
+
+        # Revenue by active ingredient (thuốc có hoạt chất X).
+        if period is not None and _has(t, "hoat chat", "thanh phan"):
+            ingredient = ds.match_ingredient(question)
+            if ingredient and _has(
+                t,
+                "doanh thu",
+                "dthu",
+                "revenue",
+                "thu duoc",
+                "tien",
+                "ban duoc",
+                "ban dc",
+            ):
+                value = ds.revenue_ingredient(period, ingredient)
+                if value is not None:
+                    return Answer(
+                        "number",
+                        _round_money(value),
+                        confidence=0.8,
+                        plan="revenue_ingredient",
+                    )
+
+        # Revenue of a customer group (sỉ / lẻ / thân thiết).
+        if period is not None and _has(t, "nhom si", "nhom le", "nhom than thiet"):
+            group = (
+                "sỉ"
+                if _has(t, "nhom si")
+                else ("thân thiết" if _has(t, "nhom than thiet") else "lẻ")
+            )
+            part = ds.revenue_filtered(period, customer_group=group)
+            if _has(t, "ti trong", "phan tram", "chiem") or "%" in raw:
+                total = ds.revenue(period)
+                if total > 0:
+                    return Answer(
+                        "percent",
+                        round(100.0 * part / total, 2),
+                        confidence=0.8,
+                        plan="customer_group_share",
+                    )
+            if _has(t, "doanh thu", "dthu", "thu ve", "tien", "ban"):
+                return Answer(
+                    "number",
+                    _round_money(part),
+                    confidence=0.8,
+                    plan="revenue_customer_group",
+                )
+
+        # Order counts filtered by category or status.
+        if _has(t, "bao nhieu don", "may don", "so don", "bn don", "bao nhieu bill"):
+            if _has(t, "trang thai", "tinh trang"):
+                if _has(t, "huy"):
+                    return Answer(
+                        "number",
+                        ds.cancelled_count(period),
+                        confidence=0.8,
+                        plan="cancelled_count",
+                    )
+                if _has(t, "tra lai", "tra hang", "hoan tra", "hoan hang"):
+                    return Answer(
+                        "number",
+                        ds.returned_count(period),
+                        confidence=0.8,
+                        plan="returned_count",
+                    )
+                status = None
+                if _has(t, "dang giao", "van chuyen", "dang gui"):
+                    status = "shipping"
+                elif _has(t, "hoan thanh", "da xong", "thanh cong", "da lay"):
+                    status = "completed"
+                elif _has(t, "cho xu ly", "dang xu ly", "dang chuan bi"):
+                    status = "other"
+                if status:
+                    count = ds.orders_by_status(period, status)
+                    if count is not None:
+                        return Answer(
+                            "number",
+                            count,
+                            confidence=0.8,
+                            plan="orders_by_status",
+                        )
+                return Answer("abstain", plan="order_count_status")
+            if _has(t, "tra lai", "tra hang", "hoan tra", "doi tra"):
+                return Answer(
+                    "number",
+                    ds.returned_count(period),
+                    confidence=0.8,
+                    plan="returned_count",
+                )
+            from .verifier import match_category
+
+            category = match_category(question, ds)
+            if category and period is not None:
+                count = ds.orders_with_category(period, category)
+                if count is not None:
+                    return Answer(
+                        "number", count, confidence=0.8, plan="orders_by_category"
+                    )
+            group = re.search(
+                r"nhom\s+([a-z0-9 ]{2,30}?)(?=\s+(?:co|ban|mua|thang|trong|"
+                r"cua|la|gom|bao|chie|nhieu|may)\b|$)",
+                t,
+            )
+            if group and period is not None:
+                count = ds.orders_with_product_keyword(period, norm_key(group.group(1)))
+                if count is not None:
+                    return Answer(
+                        "number",
+                        count,
+                        confidence=0.75,
+                        plan="orders_by_product_keyword",
+                    )
+
+        # Customer counts by number of orders.
+        threshold = re.search(r"(?:tu|it nhat)\s*(\d{1,3})\s*don", raw)
+        if threshold and _has(t, "khach"):
+            minimum = int(threshold.group(1))
+            if (
+                _has(t, "chiem", "ti le", "ty le", "phan tram", "bao nhieu %")
+                or "%" in raw
+            ):
+                share = ds.customer_order_share(period, minimum)
+                if share is not None:
+                    return Answer(
+                        "percent",
+                        share,
+                        confidence=0.8,
+                        plan="customer_order_share",
+                    )
+            count = ds.customers_with_orders(period, minimum)
+            if count is not None:
+                return Answer(
+                    "number",
+                    count,
+                    confidence=0.8,
+                    plan="customers_with_orders",
+                )
+        if _has(t, "khach") and _has(
+            t, "mua nhieu don nhat", "nhieu don nhat", "mua nhieu don"
+        ):
+            top = ds.top_customer_orders(period, k=1)
+            if top:
+                return Answer(
+                    "string", top[0][0], confidence=0.7, plan="top_customer_orders"
+                )
+
+        # Prescription vs over-the-counter revenue.
+        if _has(t, "ke don", "thuoc ke don"):
+            if period is not None:
+                is_otc = _has(
+                    t,
+                    "khong ke don",
+                    "ko ke don",
+                    "k ke don",
+                    "hong ke don",
+                    "khong can ke don",
+                    "tru thuoc ke don",
+                    "tru ke don",
+                )
+                if _has(t, "chiem", "ti trong", "phan tram") or "%" in raw:
+                    share = ds.prescription_share(period)
+                    if share is not None:
+                        return Answer(
+                            "percent",
+                            share,
+                            confidence=0.8,
+                            plan="prescription_share",
+                        )
+                if _has(t, "doanh thu", "dthu", "thu ve", "tien", "ban duoc", "ban dc"):
+                    value = ds.revenue_prescription(period, not is_otc)
+                    if value is not None:
+                        return Answer(
+                            "number",
+                            _round_money(value),
+                            confidence=0.8,
+                            plan="prescription_revenue",
+                        )
+
+        # Quantity-weighted purchase average price (rulebook §5).
+        if _has(t, "nhap", "gia nhap", "gia mua", "nhap vao") and _has(
+            t, "binh quan", "trung binh"
+        ):
+            from .verifier import match_product
+
+            product = match_product(question, ds)
+            if product and period is not None:
+                value = ds.purchase_avg_price(product, period)
+                if value is not None:
+                    return Answer(
+                        "number",
+                        _round_money(value),
+                        confidence=0.8,
+                        plan="purchase_avg_price",
+                    )
+            return Answer("abstain", plan="purchase_avg_price")
+
+        # Price-change effect questions need a bespoke 30-day comparison.
+        if (
+            _has(t, "doi gia", "tang gia", "len gia", "giam gia", "thay doi gia")
+            and _has(t, "ngay", "ke tu")
+            and _has(raw, "%", "phan tram", "may phan tram", "bao nhieu phan tram")
+            and not _has(t, "voucher", "chiet khau")
+        ):
+            return Answer("abstain", plan="price_change_comparison")
+
+        # Percent / comparison questions need a comparison metric; the revenue
+        # gap makes them unreliable, so abstain instead of risking -1.
+        # Cancellation-rate questions also ask for a percentage and are handled below.
+        if not (_has(t, "huy") and _has(t, "don", "dh")) and not _has(
+            t, "ca sang", "ca chieu"
+        ):
+            asks_percent = _has(t, "phan tram", "ti le", "ty le", "ti trong") or bool(
+                re.search(r"(?:bao nhieu|may|bn)\s*%", raw)
+            )
+            compares = _has(
+                t,
+                "tang truong",
+                "thay doi",
+                "hon hay kem",
+                "hown hay kem",
+                "cao hon",
+                "thap hon",
+                "so voi",
+                "cung ky",
+                "tang bao nhieu",
+                "giam bao nhieu",
+            )
+            if asks_percent or compares:
+                growth_words = _has(
+                    t,
+                    "thay doi",
+                    "tang truong",
+                    "hon hay kem",
+                    "tang bao nhieu",
+                    "giam bao nhieu",
+                    "tang hay giam",
+                    "may %",
+                    "bao nhieu %",
+                )
+                years = [
+                    int(value)
+                    for value in re.findall(r"thang\s+\d+\s+nam\s+(\d{4})", t)
+                ]
+                years.extend(int(value) for value in re.findall(r"\b(20[0-2]\d)\b", t))
+                single_month = (
+                    period is not None
+                    and period.start.year == period.end.year
+                    and period.start.month == period.end.month
+                )
+                yoy = _has(
+                    t,
+                    "cung thang nam truoc",
+                    "cung ky nam ngoai",
+                    "cung ky nam truoc",
+                ) or (
+                    single_month
+                    and any(year != period.start.year for year in years)
+                    and _has(t, "so voi", "tang truong", "thay doi", "so vs")
+                )
+                if yoy and period is not None:
+                    metric = (
+                        "orders"
+                        if _has(t, "so don", "don hang", "so bill")
+                        else "revenue"
+                    )
+                    return Answer(
+                        "percent",
+                        ds.growth_yoy(period, metric),
+                        confidence=0.75,
+                        plan="revenue_growth_yoy",
+                    )
+                share_words = _has(t, "chiem", "ti trong", "dong gop", "cung ky nam")
+                if (
+                    growth_words
+                    and not share_words
+                    and period is not None
+                    and not _has(t, "ca sang", "ca chieu", "gia ", "gia ban", "doi gia")
+                ):
+                    previous = previous_period(period)
+                    bounds = ds.date_range()
+                    if bounds and previous.end < bounds[0]:
+                        return Answer("unanswerable", plan="growth_no_prior_period")
+                    metric = (
+                        "orders"
+                        if _has(t, "so don", "don hang", "so bill")
+                        else "revenue"
+                    )
+                    return Answer(
+                        "percent",
+                        ds.growth(period, metric),
+                        confidence=0.75,
+                        plan="revenue_growth",
+                    )
+                return Answer("abstain", plan="percent_or_comparison")
+
+        # Threshold counts: orders or days whose revenue passes a floor.
+        if (
+            _has(t, "doanh thu", "dthu", "tien hang", "tien ban")
+            and not _has(t, "nhap hang")
+            and (
+                _words(t, "tu", "tren", "duoi", "hon", "qua")
+                or _has(t, "tro len", "tro xuong", "dat muc", "dat ")
+                or _has(raw, "≥", ">=", "<=", ">", "<")
+            )
+        ):
+            lower, upper = _money_thresholds(raw)
+            if lower is not None or upper is not None:
+                if period is None:
+                    return Answer("abstain", plan="threshold_count")
+                if _has(t, "bao nhieu ngay", "may ngay", "so ngay", "nhieu ngay"):
+                    return Answer(
+                        "number",
+                        ds.count_days_by_revenue(period, lower, upper),
+                        confidence=0.85,
+                        plan="days_above_revenue",
+                    )
+                if _words(t, "don", "bill") or _has(t, "hoa don"):
+                    return Answer(
+                        "number",
+                        ds.count_orders_by_revenue(period, lower, upper),
+                        confidence=0.85,
+                        plan="orders_above_revenue",
+                    )
+
+        # "Liệt kê" with a non-product criterion is not handled.
+        if _has(t, "liet ke") and not _has(t, "ban chay", "ban nhieu", "hot nhat"):
+            return Answer("abstain", plan="list_other")
+
+        # 1. "Ngày nào / tháng nào ... cao nhất" -> date.
+        if _has(t, "ngay nao") and _has(
+            t,
+            "cao nhat",
+            "nhieu nhat",
+            "nhiu nhat",
+            "dat nhat",
+            "ban dac nhat",
+            "ban dat nhat",
+            "nhieu tien nhat",
+            "nhiu tien nhat",
+        ):
+            if period is None or not _has(
+                t, "doanh thu", "dthu", "ban duoc", "thu ve", "tien"
+            ):
+                return Answer("abstain", plan="top_day")
+            top = ds.top_days(period, k=1)
+            if not top:
+                return Answer("abstain", plan="top_day")
+            return Answer(
+                "date", top[0][0].isoformat(), confidence=0.8, plan="top_revenue_day"
+            )
+
+        if _has(t, "thang nao") and _has(
+            t, "cao nhat", "nhieu nhat", "nhiu nhat", "lon nhat", "nhieu tien nhat"
+        ):
+            if period is None or not _has(
+                t, "doanh thu", "dthu", "ban duoc", "ban dc", "thu ve", "nhiu tien"
+            ):
+                return Answer("abstain", plan="top_month")
+            top = ds.top_months(period, k=1)
+            if not top:
+                return Answer("abstain", plan="top_month")
+            return Answer("date", top[0][0], confidence=0.75, plan="top_revenue_month")
+
+        # 2. Ranking products.
+        if (
+            _has(
+                t,
+                "ban chay nhat",
+                "ban nhieu nhat",
+                "ban dc nhieu nhat",
+                "ban duoc nhieu",
+                "ban ra nhieu",
+                "ban dc nhieu",
+                "hot nhat",
+                "ban chay",
+                "chay nhat",
+                "ban nhieu",
+                "nhieu ly nhat",
+                "nhieu kg nhat",
+                "nhieu hop nhat",
+                "nhieu chai nhat",
+                "nhieu lon nhat",
+                "nhieu dia nhat",
+                "nhieu phan nhat",
+                "nhieu goi nhat",
+                "nhieu cay nhat",
+                "nhieu bao nhat",
+            )
+            and not _has(t, "size m", "size l")
+            and not _has(
+                t,
+                "bao nhieu tien",
+                "bao nhiu tien",
+                "nhiu tien",
+                "nhieu tien",
+                "doanh thu",
+                "dthu",
+            )
+        ):
+            if period is None:
+                return Answer("abstain", plan="top_product")
+            if k > 1 and ds.conversions and ds.conversions[0]:
+                # Mixed pack/base units make multi-item rankings unreliable.
+                return Answer("abstain", plan="top_products_conversion")
+            from .verifier import match_category
+
+            category = match_category(question, ds)
+            if category:
+                top = ds.top_products_filtered(
+                    period, by="quantity", k=k, category=category
+                )
+            else:
+                top = ds.top_products(period, by="quantity", k=k)
+            if not top:
+                return Answer("abstain", plan="top_product")
+            if k > 1 or _has(t, "liet ke", "top", "danh sach"):
+                return Answer(
+                    "list",
+                    [name for name, _ in top],
+                    confidence=0.7,
+                    plan="top_products_quantity",
+                )
+            return Answer(
+                "string", top[0][0], confidence=0.75, plan="top_product_quantity"
+            )
+
+        # 2b. Ranking products by revenue.
+        if (
+            period is not None
+            and _has(
+                t,
+                "thu ve nhieu tien nhat",
+                "doanh thu nhieu nhat",
+                "ban duoc nhieu tien nhat",
+                "ban dc nhieu tien nhat",
+            )
+            and _has(t, "mat hang", "san pham", "hang nao", "mon nao", "sp nao")
+        ):
+            from .verifier import match_category
+
+            category = match_category(question, ds)
+            top = ds.top_products_filtered(
+                period, by="line_amount", k=k, category=category
+            )
+            if top:
+                return Answer(
+                    "string", top[0][0], confidence=0.75, plan="top_product_revenue"
+                )
+
+        # 3. Ranking customers.
+        if _has(
+            t,
+            "khach mua nhieu nhat",
+            "khach mua nhieu tien nhat",
+            "khach hang mua nhieu",
+            "khach nao mua nhieu",
+            "ai mua hang nhieu",
+            "ai mua nhieu",
+            "mua nhieu tien nhat",
+            "mua nhieu nhat",
+            "mua hang nhieu tien nhat",
+            "mua hang nhiu tien nhat",
+            "mua nhiu tien nhat",
+            "ai mua nhieu tien nhat",
+            "ai mua hang nhieu tien nhat",
+            "ai mua hang nhiu tien nhat",
+            "tong tien mua cao nhat",
+            "mua cao nhat",
+            "khach mua cao nhat",
+            "chi tieu nhieu nhat",
+            "chi tieu nhiu nhat",
+            "3 khach",
+        ) and not _has(t, "cong no", "no "):
+            if period is None:
+                return Answer("abstain", plan="top_customer")
+            top = ds.top_customers(period, k=max(1, k))
+            if not top:
+                return Answer("abstain", plan="top_customer")
+            if k > 1 or _has(t, "liet ke", "danh sach", "top"):
+                return Answer(
+                    "list",
+                    [name for name, _ in top],
+                    confidence=0.7,
+                    plan="top_customers_revenue",
+                )
+            return Answer(
+                "string", top[0][0], confidence=0.65, plan="top_customer_revenue"
+            )
+
+        # 3b. Cups by size, e.g. "bán được bao nhiêu ly size M".
+        if _has(t, "size m", "size l") and _has(t, "ly", "coc"):
+            if period is None:
+                return Answer("abstain", plan="quantity_by_size")
+            size = "m" if "size m" in t else "l"
+            value = ds.quantity_by_unit(period, unit="ly", size=size)
+            if value is not None:
+                return Answer(
+                    "number",
+                    _round_money(value),
+                    confidence=0.8,
+                    plan="quantity_by_size",
+                )
+
+        # 3c. Total cups, e.g. "tuần trước bán ra mấy ly".
+        if (
+            _has(t, "ly", "coc")
+            and not _has(t, "size m", "size l", "loai", "nao", "vi ", "huong")
+            and _has(
+                t,
+                "ban duoc",
+                "ban dc",
+                "ban ra",
+                "may ly",
+                "bn ly",
+                "bao nhieu ly",
+            )
+        ):
+            from .verifier import match_product
+
+            if match_product(question, ds) is None:
+                if period is None:
+                    return Answer("abstain", plan="quantity_by_unit")
+                value = ds.quantity_by_unit(period, unit="ly")
+                if value is not None:
+                    return Answer(
+                        "number",
+                        _round_money(value),
+                        confidence=0.8,
+                        plan="quantity_by_unit",
+                    )
+
+        # 4. Cancellation rate / count.
+        if (
+            _has(t, "huy")
+            and _has(t, "don", "dh")
+            and (_has(raw, "%") or _has(t, "ti le", "ty le", "phan tram", "chiem"))
+            or _has(
+                t,
+                "ti le huy",
+                "ty le huy",
+                "ti le don huy",
+                "ty le don huy",
+                "ti le huy don",
+            )
+        ):
+            if period is None:
+                return Answer("abstain", plan="cancel_rate")
+            return Answer(
+                "percent",
+                ds.cancellation_rate(period),
+                confidence=0.85,
+                plan="cancellation_rate",
+            )
+        if _has(t, "huy") and _has(t, "don", "dh", "hoa don", "bill"):
+            if period is None:
+                return Answer("abstain", plan="cancel_count")
+            return Answer(
+                "number",
+                ds.cancelled_count(period),
+                confidence=0.8,
+                plan="cancelled_count",
+            )
+
+        # 4a. Products present in at least N distinct orders.
+        if _has(
+            t,
+            "xuat hien",
+            "co mat",
+            "duoc mua o",
+            "duoc mua tai",
+            "mua o",
+            "mua tai",
+        ) and _has(t, "don", "don hang"):
+            match = re.search(r"(?:tu|it nhat)?\s*(\d{1,4})\s*don", raw)
+            if match and period is not None:
+                return Answer(
+                    "number",
+                    ds.products_in_orders(period, int(match.group(1))),
+                    confidence=0.8,
+                    plan="products_in_orders",
+                )
+
+        # 4b. Products that did not sell in the period.
+        if _has(t, "bao nhieu mat hang", "may mat hang", "so mat hang") and (
+            _words(t, "e")
+            or _has(t, "khong ban", "ko ban", "ban cham", "e han", "khong ai mua")
+        ):
+            if period is not None:
+                return Answer(
+                    "number",
+                    ds.unsold_count(period),
+                    confidence=0.8,
+                    plan="unsold_products",
+                )
+
+        # 4b. Closing stock value at cost.
+        if (
+            _has(t, "gia von", "gia tri")
+            and _has(t, "ton", "trong kho", "tien hang")
+            and _has(t, "bao nhieu", "bnhiu", "may")
+        ):
+            value = ds.inventory_value()
+            if value is not None:
+                return Answer(
+                    "number",
+                    _round_money(value),
+                    confidence=0.8,
+                    plan="inventory_value",
+                )
+
+        # 4c. Closing stock, direct from the inventory snapshot.
+        if (
+            _words(t, "ton")
+            or _has(t, "ton kho", "ton cuoi", "trong kho", "con bao nhieu", "con lai")
+        ) and not (
+            _has(t, "gia tri", "gia von", "nhap", "don vi lon", "hop chan", "le")
+            or _words(t, "ban")
+        ):
+            stock_product = _match_inventory(question, ds)
+            if stock_product:
+                value = ds.stock(stock_product)
+                if value is not None:
+                    return Answer(
+                        "number",
+                        _round_money(value),
+                        confidence=0.8,
+                        plan="stock_on_hand",
+                    )
+
+        # 4b. Product-aware revenue and quantity.
+        from .verifier import match_product
+
+        product = match_product(question, ds)
+        if product and period is not None:
+            price_words = _has(
+                t,
+                "gia ban",
+                "don gia",
+                "gia bao nhieu",
+                "bao nhieu mot",
+                "voi don gia",
+                "gia cua",
+                "ban voi gia",
+            )
+            if (
+                price_words
+                and period.start == period.end
+                and not _has(t, "nhap", "binh quan", "trung binh")
+            ):
+                value = ds.price_on_date(product, period.start)
+                if value is not None:
+                    return Answer(
+                        "number",
+                        _round_money(value),
+                        confidence=0.8,
+                        plan="price_on_date",
+                    )
+            price_inventory = _has(
+                t,
+                "gia ban",
+                "don gia",
+                "gia bao nhieu",
+                "bao nhieu mot",
+                "gia nhap",
+                "nhap vao",
+                "gia binh quan",
+                "ton kho",
+                "ton cuoi",
+                "con lai",
+                "con bao nhieu",
+                "cuoi ngay",
+                "trong kho",
+                "het han",
+            )
+            money_words = _has(
+                t,
+                "doanh thu",
+                "dthu",
+                "thu ve",
+                "tien ban",
+                "tieng ban",
+                "tieng bang",
+                "tieenf",
+                "tienf",
+                "bao nhieu tien",
+                "bao nhiu tien",
+                "bnhiu tien",
+                "bn tien",
+                "bnhieu tien",
+                "nhiu tien",
+                "may tien",
+                "thu duoc",
+            )
+            if money_words and not price_inventory:
+                value = ds.revenue_filtered(period, product=product)
+                return Answer(
+                    "number",
+                    _round_money(value),
+                    confidence=0.8,
+                    plan="revenue_product",
+                )
+            quantity_words = _has(
+                t, "ban duoc", "ban ra", "ban dc", "may ", "bao nhieu", "so luong"
+            )
+            has_unit = _words(
+                t,
+                "kg",
+                "tan",
+                "cay",
+                "cuon",
+                "bao",
+                "cai",
+                "hop",
+                "chai",
+                "binh",
+                "lon",
+                "ly",
+                "dia",
+                "phan",
+                "noi",
+                "goi",
+                "tup",
+                "lo",
+                "vien",
+                "mieng",
+                "thung",
+                "ket",
+                "m3",
+                "met",
+                "bo",
+                "chiec",
+            )
+            if not price_inventory and quantity_words and (has_unit or "so luong" in t):
+                value = ds.product_quantity(period, product=product)
+                if value is not None:
+                    return Answer(
+                        "number",
+                        _round_money(value),
+                        confidence=0.8,
+                        plan="product_quantity",
+                    )
+
+        # 4b2. Quantity by unit when no product is named.
+        if (
+            period is not None
+            and _has(t, "bao nhieu", "may", "bnhiu", "bao nhiu")
+            and not _has(
+                t,
+                "tien",
+                "doanh thu",
+                "dthu",
+                "gia",
+                "ton",
+                "trong kho",
+                "con lai",
+                "don hang",
+                "so don",
+                "bao nhieu don",
+                "may don",
+                "hoa don",
+                "bill",
+            )
+            and not (_words(t, "xe") and _words(t, "chan") and _words(t, "le"))
+        ):
+            from .verifier import match_unit
+
+            unit = match_unit(question, ds)
+            if unit:
+                value = ds.quantity_by_unit(period, unit)
+                if value is not None:
+                    return Answer(
+                        "number",
+                        _round_money(value),
+                        confidence=0.8,
+                        plan="quantity_by_unit",
+                    )
+
+        # 4c. Category revenue, e.g. "nhóm cát đá bán được bao nhiêu tiền".
+        if period is not None:
+            from .verifier import match_category
+
+            category = match_category(question, ds)
+            if (
+                category
+                and _has(
+                    t,
+                    "doanh thu",
+                    "dthu",
+                    "thu ve",
+                    "tien ban",
+                    "ban duoc",
+                    "ban dc",
+                    "nhiu tien",
+                    "bnhiu tien",
+                )
+                and not _has(t, "chiem", "ti trong", "dong gop", "phan tram", "may %")
+            ):
+                value = ds.revenue_filtered(period, category=category)
+                return Answer(
+                    "number",
+                    _round_money(value),
+                    confidence=0.8,
+                    plan="revenue_category",
+                )
+
+        # 5. Growth / change percent: the baseline revenue gap makes this
+        # unreliable, so abstain instead of risking -1.
+        if _has(
+            t,
+            "tang truong",
+            "phan tram thay doi",
+            "thay doi bao nhieu",
+            "tang bao nhieu phan tram",
+            "giam bao nhieu phan tram",
+            "tang hay giam",
+        ) and not _has(t, "ca sang", "ca chieu"):
+            return Answer("abstain", plan="growth")
+
+        # 6. Average order value.
+        if _has(
+            t,
+            "trung binh moi don",
+            "binh quan moi don",
+            "gia tri trung binh mot don",
+            "trung binh mot don",
+            "trung binh tren mot don",
+            "binh quan moi bill",
+            "trung binh moi bill",
+            "binh quan mot bill",
+            "binh quan tren mot bill",
+            "trung binh 1 don",
+            "binh quan 1 don",
+            "trung binh mot dh",
+            "binh quan mot dh",
+            "trung binh 1 phieu",
+            "binh quan 1 phieu",
+            "binh quan don hang",
+            "binh quan tren 1 dh",
+            "binh quan 1 dh",
+            "trung binh 1 dh",
+            "trung binh moi dh",
+            "binh quan moi dh",
+            "gia tri trung binh don",
+            "trung binhf",
+            "binh quanf",
+            "trung binhf mot ddown",
+            "trung binh mot ddown",
+            "trung binhf 1 ddown",
+        ) or re.search(
+            r"(?:trung binh|binh quan)[a-z ]{0,20}"
+            r"(?:mot|moi|1|moi|mooix|moix)\s*"
+            r"(?:don|dh|bill|phieu|hoa don|order)",
+            t,
+        ):
+            if period is None:
+                return Answer("abstain", plan="avg_order")
+            count = ds.order_count(period)
+            if count == 0:
+                return Answer("abstain", plan="avg_order")
+            return Answer(
+                "number",
+                _round_money(ds.revenue(period) / count),
+                confidence=0.8,
+                plan="avg_order_value",
+            )
+
+        # 7. Debt: needs paid/outstanding semantics that vary by schema.
+        if _has(t, "con no", "cong no", "chua tra", "no tien", "khach no"):
+            return Answer("abstain", plan="debt_total")
+
+        # 6b. Shift (ca sáng / ca chiều) revenue and order counts.
+        if _has(t, "ca sang", "ca chieu"):
+            compare_at = min(
+                [
+                    position
+                    for position in (t.find("so voi"), t.find("so vs"))
+                    if position != -1
+                ]
+                or [-1]
+            )
+            if compare_at != -1:
+                before, after = t[:compare_at], t[compare_at:]
+                if "ca chieu" in before:
+                    shift = "afternoon"
+                elif "ca sang" in before:
+                    shift = "morning"
+                elif "ca sang" in after:
+                    shift = "afternoon"
+                elif "ca chieu" in after:
+                    shift = "morning"
+                else:
+                    shift = "morning"
+            else:
+                pos_sang = t.find("ca sang")
+                pos_chieu = t.find("ca chieu")
+                if pos_chieu == -1:
+                    shift = "morning"
+                elif pos_sang == -1:
+                    shift = "afternoon"
+                else:
+                    shift = "morning" if pos_sang < pos_chieu else "afternoon"
+            other = "afternoon" if shift == "morning" else "morning"
+            compares = _has(
+                t,
+                "so voi",
+                "chenh",
+                "hon",
+                "kem",
+                "tang",
+                "giam",
+                "may %",
+                "bao nhieu %",
+            )
+            if compares:
+                if _words(t, "don", "bill") or _has(t, "hoa don"):
+                    base = ds.orders_shift(period, other)
+                    value = ds.orders_shift(period, shift)
+                else:
+                    base = ds.revenue_shift(period, other)
+                    value = ds.revenue_shift(period, shift)
+                if base and value is not None and base > 0:
+                    return Answer(
+                        "percent",
+                        round(100.0 * (value - base) / base, 2),
+                        confidence=0.8,
+                        plan="shift_change",
+                    )
+            if _words(t, "don", "bill") or _has(t, "hoa don"):
+                count = ds.orders_shift(period, shift)
+                if count is not None:
+                    return Answer(
+                        "number", count, confidence=0.8, plan="shift_order_count"
+                    )
+            if _has(t, "doanh thu", "dthu", "tien", "ban"):
+                value = ds.revenue_shift(period, shift)
+                if value is not None:
+                    return Answer(
+                        "number",
+                        _round_money(value),
+                        confidence=0.8,
+                        plan="shift_revenue",
+                    )
+
+        # 6c. Employee revenue and top seller.
+        if period is not None and _has(t, "nhan vien", "nv "):
+            if _has(t, "cao nhat", "cao nhut", "nhieu nhat", "nhiu nhat") and _has(
+                t, "ai", "nao"
+            ):
+                name = ds.top_employee(period)
+                if name:
+                    return Answer("string", name, confidence=0.75, plan="top_employee")
+            code = re.search(r"\bnv\s*0*(\d+)\b", raw)
+            if code:
+                employee = f"NV{int(code.group(1)):03d}"
+                value = ds.revenue_employee(period, employee)
+                if value is not None:
+                    return Answer(
+                        "number",
+                        _round_money(value),
+                        confidence=0.8,
+                        plan="employee_revenue",
+                    )
+
+        # 6d. Commission (hoa hồng) by employee.
+        if period is not None and _has(t, "hoa hong", "hue hong", "commission"):
+            if _has(t, "cao nhat", "nhieu nhat", "nhiu nhat") and _has(
+                t, "ai", "nao", "tho"
+            ):
+                ranking = ds.commission_by_employee(period)
+                if ranking:
+                    return Answer(
+                        "string",
+                        ranking[0][0],
+                        confidence=0.75,
+                        plan="top_commission",
+                    )
+            employee = ds.match_employee(question)
+            if employee:
+                value = ds.commission(period, employee)
+                if value is not None:
+                    return Answer(
+                        "number",
+                        _round_money(value),
+                        confidence=0.8,
+                        plan="employee_commission",
+                    )
+
+        # 7b. Supplier ranking.
+        if _has(t, "nha cung cap", "nhaf cung cap", "ncc") and _has(
+            t,
+            "nhieu tien nhat",
+            "nhieu tien hang nhat",
+            "cao nhat",
+            "nhieu nhat",
+            "lon nhat",
+        ):
+            if period is not None:
+                supplier = ds.top_supplier(period)
+                if supplier:
+                    return Answer(
+                        "string",
+                        supplier,
+                        confidence=0.75,
+                        plan="top_supplier",
+                    )
+
+        # 7c. Trade-in, paid and warranty ledgers.
+        if _has(t, "thu may cu") and _has(
+            t, "bao nhieu", "bnhiu", "may", "tien", "tong", "cong"
+        ):
+            value = (
+                ds.tradein_total(period) if period is not None else ds.tradein_total()
+            )
+            if value is not None:
+                return Answer(
+                    "number",
+                    _round_money(value),
+                    confidence=0.8,
+                    plan="tradein_total",
+                )
+        if _has(t, "bao hanh") and _has(
+            t, "luot", "nuot", "lan", "phieu", "may luot", "bao nhieu", "may"
+        ):
+            count = ds.warranty_count(period)
+            if count is not None:
+                return Answer("number", count, confidence=0.8, plan="warranty_count")
+        if (
+            period is not None
+            and _has(t, "khach phai tra", "tien khach tra", "khach da tra", "khach tra")
+            and not _has(t, "chua tra", "con no", "no ", "gop")
+        ):
+            return Answer(
+                "number",
+                _round_money(ds.paid_total(period)),
+                confidence=0.8,
+                plan="paid_total",
+            )
+
+        # 7d. Imported quantity and import-minus-sales.
+        from .verifier import match_product as _match_product
+
+        import_product = _match_product(question, ds)
+        if period is not None and import_product and _has(t, "nhap"):
+            purchased = ds.purchase_quantity(import_product, period)
+            if purchased is not None:
+                if _has(t, "tru", "tru bot", "tru so") and _has(t, "ban"):
+                    sold = ds.product_quantity(period, import_product)
+                    if sold is not None:
+                        return Answer(
+                            "number",
+                            _round_money(purchased - sold),
+                            confidence=0.8,
+                            plan="import_minus_sales",
+                        )
+                if _has(t, "bao nhieu", "bnhiu", "may"):
+                    return Answer(
+                        "number",
+                        _round_money(purchased),
+                        confidence=0.8,
+                        plan="purchase_quantity",
+                    )
+
+        # 8. Purchase totals, only when the semantic layer found priced purchases.
+        if _has(
+            t,
+            "nhap hang",
+            "tien nhap",
+            "tien hang nhap",
+            "gia tri nhap",
+            "nhap vao",
+            "bo ra bao nhieu tien",
+        ):
+            if period is None or _has(
+                t,
+                "gia nhap",
+                "binh quan",
+                "trung binh",
+                "nha cung cap",
+                "mat hang",
+                "san pham",
+            ):
+                return Answer("abstain", plan="purchase_total")
+            total = ds.purchase_total(period)
+            if total <= 0:
+                return Answer("abstain", plan="purchase_total")
+            return Answer(
+                "number",
+                _round_money(total),
+                confidence=0.8,
+                plan="purchase_total",
+            )
+
+        # 9. Order count.
+        if _has(
+            t,
+            "so don",
+            "bao nhieu don",
+            "bao nhiu don",
+            "bn don",
+            "may don",
+            "nhieu don",
+            "nhiu don",
+            "ddown",
+            "dh",
+            "so luong don",
+            "so hoa don",
+        ):
+            if period is None:
+                return Answer("abstain", plan="order_count")
+            if _has(t, *_FILTER_WORDS) or _has(
+                t, "co dthu", "co doanh thu", "doanh thu tu", "tu 55", "tren ", "duoi "
+            ):
+                return Answer("abstain", plan="order_count_filtered")
+            return Answer(
+                "number", ds.order_count(period), confidence=0.8, plan="order_count"
+            )
+
+        # 9b. Explicit month range -> list of every month in the range.
+        m = re.search(
+            r"tu\s+thang\s*(\d{1,2})/(\d{4})\s+(?:den|toi|qua)\s+thang\s*(\d{1,2})/(\d{4})",
+            raw,
+        )
+        if m and _has(t, "doanh thu", "dthu", "thu ve", "moi thang", "tung thang"):
+            year, month = int(m.group(2)), int(m.group(1))
+            end_year, end_month = int(m.group(4)), int(m.group(3))
+            months = []
+            while (year, month) <= (end_year, end_month) and len(months) <= 24:
+                months.append((year, month))
+                month += 1
+                if month == 13:
+                    month = 1
+                    year += 1
+            values = [
+                _round_money(ds.revenue(resolve_period(f"thang {mo}/{y}", as_of)))
+                for y, mo in months
+            ]
+            return Answer("list", values, confidence=0.75, plan="revenue_monthly_range")
+
+        # 9c. Multiple explicit months asked for money -> list of monthly values.
+        refs = extract_month_refs(raw, as_of)
+        if (
+            len(refs) >= 2
+            and _has(t, "doanh thu", "dthu", "thu ve")
+            and _has(t, "bao nhieu", "la bao nhieu", "ghi", "lần lượt", "lan luot")
+            and not _has(
+                t, "tang", "giam", "cao hon", "thap hon", "lien tuc", "so sanh"
+            )
+        ):
+            values = []
+            for year, month in sorted(refs):
+                p = resolve_period(f"thang {month}/{year}", as_of)
+                if p is None:
+                    return Answer("abstain", plan="revenue_monthly_list")
+                values.append(_round_money(ds.revenue(p)))
+            return Answer("list", values, confidence=0.75, plan="revenue_monthly_list")
+
+        # 9c. "N tháng liền nhau kết thúc ở tháng M/YYYY" -> list of values.
+        m = re.search(
+            r"(\d{1,2})\s*thang\s*lien nhau\s*(?:ket thuc|tinh den|den)\s*"
+            r"(?:o|tai|vao)?\s*thang\s*(\d{1,2})/(\d{4})",
+            raw,
+        )
+        if m and _has(t, "doanh thu", "dthu", "thu ve"):
+            count = int(m.group(1))
+            year, month = int(m.group(3)), int(m.group(2))
+            if not 1 <= count <= 12:
+                return Answer("abstain", plan="revenue_monthly_sequence")
+            months = []
+            for _ in range(count):
+                months.append((year, month))
+                month -= 1
+                if month == 0:
+                    month = 12
+                    year -= 1
+            months.reverse()
+            values = []
+            for y, mo in months:
+                value = ds.revenue(resolve_period(f"thang {mo}/{y}", as_of))
+                values.append(_round_money(value))
+            return Answer(
+                "list", values, confidence=0.75, plan="revenue_monthly_sequence"
+            )
+
+        # 10. Total revenue, only when no filter is present.
+        if _has(
+            t,
+            "gia ban",
+            "don gia",
+            "gia bao nhieu",
+            "bao nhieu mot",
+            "gia nhap",
+            "gia binh quan",
+        ):
+            return Answer("abstain", plan="price_question")
+        if _has(
+            t,
+            "doanh thu",
+            "dthu",
+            "thu ve",
+            "ban duoc bao nhieu tien",
+            "ban dc bao nhieu tien",
+            "tien ban",
+            "nhiu tien",
+            "bnhiu tien",
+            "bn tien",
+            "bnhieu tien",
+        ) or (
+            _has(t, "ban duoc", "ban dc", "ban ra")
+            and _has(t, "bao nhieu tien", "bao nhiu tien", "bnhiu tien", "bn tien")
+        ):
+            if period is None:
+                return Answer("abstain", plan="revenue")
+            if _has(t, "nhap", "mua vao", "tien nhap"):
+                return Answer("abstain", plan="revenue_purchase_guard")
+            if _has(t, *_FILTER_WORDS):
+                return Answer("abstain", plan="revenue_filtered")
+            return Answer(
+                "number",
+                _round_money(ds.revenue(period)),
+                confidence=0.85,
+                plan="revenue_total",
+            )
+
+        return Answer("abstain", plan="unsupported")

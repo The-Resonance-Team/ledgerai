@@ -1,0 +1,32 @@
+# Data (do not commit raw competition data)
+data/raw/
+data/processed/
+*.zip
+
+# Models / weights
+models/
+*.safetensors
+*.bin
+*.gguf
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Env / secrets
+.env
+.env.*
+
+# OS
+.DS_Store
+
+# Outputs
+eval/reports/
+eval/run_*/
+eval/predict_*/
+submission.jsonl
+result/
+logs/

@@ -1,0 +1,2806 @@
+{
+  "datamate": [
+    {
+      "rank": 1,
+      "name": "NPGL",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 2,
+      "name": "TBCPC",
+      "slm": 1,
+      "llm": 1,
+      "apis": 1
+    },
+    {
+      "rank": 3,
+      "name": "innocent",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 4,
+      "name": "Thợ Săn Tiền Giải",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 5,
+      "name": "FatSheeDuk",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 6,
+      "name": "Pawgrammers",
+      "slm": 1,
+      "llm": -0.608,
+      "apis": 1
+    },
+    {
+      "rank": 7,
+      "name": "ALL FATHER",
+      "slm": 1,
+      "llm": 1,
+      "apis": 1
+    },
+    {
+      "rank": 8,
+      "name": "SparkMind",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.659
+    },
+    {
+      "rank": 9,
+      "name": "TLU",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 10,
+      "name": "Pairameters",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 11,
+      "name": "SakiTenma",
+      "slm": 1,
+      "llm": 1,
+      "apis": 1
+    },
+    {
+      "rank": 12,
+      "name": "Ngũ Long Tranh Bá",
+      "slm": 1,
+      "llm": 1,
+      "apis": 1
+    },
+    {
+      "rank": 13,
+      "name": "Sirtual",
+      "slm": 1,
+      "llm": 1,
+      "apis": 1
+    },
+    {
+      "rank": 14,
+      "name": "MTCH",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 15,
+      "name": "Only One",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 16,
+      "name": "tongdong",
+      "slm": 1,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 17,
+      "name": "yesido",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 18,
+      "name": "AILover",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.998
+    },
+    {
+      "rank": 19,
+      "name": "hỏng đầu",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.916
+    },
+    {
+      "rank": 20,
+      "name": "KieuKieu",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.854
+    },
+    {
+      "rank": 21,
+      "name": "Autograd Engine",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.1
+    },
+    {
+      "rank": 22,
+      "name": "MAFIA SUNSHINE",
+      "slm": 1,
+      "llm": 0.972,
+      "apis": 0.467
+    },
+    {
+      "rank": 23,
+      "name": "Bida hong ?",
+      "slm": 1,
+      "llm": 1,
+      "apis": 1
+    },
+    {
+      "rank": 24,
+      "name": "NNN",
+      "slm": 1,
+      "llm": 0.902,
+      "apis": null
+    },
+    {
+      "rank": 25,
+      "name": "AIO-VQH",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 26,
+      "name": "CopyPaste",
+      "slm": 1,
+      "llm": 1,
+      "apis": 0.988
+    },
+    {
+      "rank": 27,
+      "name": "Sudo",
+      "slm": 1,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 28,
+      "name": "khoai_tay_chien",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.39
+    },
+    {
+      "rank": 29,
+      "name": "DragonHarness",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.517
+    },
+    {
+      "rank": 30,
+      "name": "Phúc Lộc Thọ",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.912
+    },
+    {
+      "rank": 31,
+      "name": "CAIRA",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.521
+    },
+    {
+      "rank": 32,
+      "name": "ktmv",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.964
+    },
+    {
+      "rank": 33,
+      "name": "Gia đình DUBU",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 34,
+      "name": "Team VNP",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 35,
+      "name": "Vecna",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.884
+    },
+    {
+      "rank": 36,
+      "name": "Sumo",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 37,
+      "name": "CogAILab",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.926
+    },
+    {
+      "rank": 38,
+      "name": "Hoi chieu troi mua",
+      "slm": 1,
+      "llm": 1,
+      "apis": 1
+    },
+    {
+      "rank": 39,
+      "name": "The Unicorn",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.998
+    },
+    {
+      "rank": 40,
+      "name": "Kitchen",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.996
+    },
+    {
+      "rank": 41,
+      "name": "NewJeansNeverDie",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 42,
+      "name": "NKAAS",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.984
+    },
+    {
+      "rank": 43,
+      "name": "om",
+      "slm": 1,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 44,
+      "name": "Pochacco",
+      "slm": 1,
+      "llm": null,
+      "apis": 0.953
+    },
+    {
+      "rank": 45,
+      "name": "Bí ngoo",
+      "slm": 0.998,
+      "llm": null,
+      "apis": 0.795
+    },
+    {
+      "rank": 46,
+      "name": "AIO_K24416",
+      "slm": 0.998,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 47,
+      "name": "Ux3T",
+      "slm": 0.998,
+      "llm": null,
+      "apis": -0.407
+    },
+    {
+      "rank": 48,
+      "name": "PHTK",
+      "slm": 0.997,
+      "llm": 0.997,
+      "apis": 0.875
+    },
+    {
+      "rank": 49,
+      "name": "Null & Void",
+      "slm": 0.996,
+      "llm": null,
+      "apis": 0.944
+    },
+    {
+      "rank": 50,
+      "name": "Hanghaha",
+      "slm": 0.996,
+      "llm": null,
+      "apis": 0.982
+    },
+    {
+      "rank": 51,
+      "name": "404NotFound",
+      "slm": 0.996,
+      "llm": null,
+      "apis": 0.816
+    },
+    {
+      "rank": 52,
+      "name": "Cao Đẳng Bưu Điện",
+      "slm": 0.996,
+      "llm": null,
+      "apis": 0.39
+    },
+    {
+      "rank": 53,
+      "name": "Band",
+      "slm": 0.995,
+      "llm": null,
+      "apis": 0.703
+    },
+    {
+      "rank": 54,
+      "name": "HVT-M",
+      "slm": 0.994,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 55,
+      "name": "qw38",
+      "slm": 0.992,
+      "llm": null,
+      "apis": 0.079
+    },
+    {
+      "rank": 56,
+      "name": "LEK",
+      "slm": 0.992,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 57,
+      "name": "Haizdilao",
+      "slm": 0.992,
+      "llm": null,
+      "apis": 0.992
+    },
+    {
+      "rank": 58,
+      "name": "Oneman",
+      "slm": 0.991,
+      "llm": null,
+      "apis": 0.991
+    },
+    {
+      "rank": 59,
+      "name": "Nai",
+      "slm": 0.991,
+      "llm": null,
+      "apis": 0.97
+    },
+    {
+      "rank": 60,
+      "name": "Alovate",
+      "slm": 0.991,
+      "llm": null,
+      "apis": 0.966
+    },
+    {
+      "rank": 61,
+      "name": "KikiAI",
+      "slm": 0.991,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 62,
+      "name": "HarmonyCA",
+      "slm": 0.99,
+      "llm": null,
+      "apis": 0.934
+    },
+    {
+      "rank": 63,
+      "name": "HHL",
+      "slm": 0.99,
+      "llm": null,
+      "apis": 0.988
+    },
+    {
+      "rank": 64,
+      "name": "Uncle Agent",
+      "slm": 0.988,
+      "llm": null,
+      "apis": 0.991
+    },
+    {
+      "rank": 65,
+      "name": "Claude Code",
+      "slm": 0.988,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 66,
+      "name": "Nhật Cường AI",
+      "slm": 0.986,
+      "llm": null,
+      "apis": 0.798
+    },
+    {
+      "rank": 67,
+      "name": "ReAct",
+      "slm": 0.986,
+      "llm": null,
+      "apis": 0.948
+    },
+    {
+      "rank": 68,
+      "name": "SuperAI.Z",
+      "slm": 0.985,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 69,
+      "name": "Coconut",
+      "slm": 0.981,
+      "llm": null,
+      "apis": 0.994
+    },
+    {
+      "rank": 70,
+      "name": "TUIUIT",
+      "slm": 0.98,
+      "llm": null,
+      "apis": 0.974
+    },
+    {
+      "rank": 71,
+      "name": "Bún bà Thuỷ",
+      "slm": 0.978,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 72,
+      "name": "Shiba",
+      "slm": 0.977,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 73,
+      "name": "CCAgent",
+      "slm": 0.972,
+      "llm": 0.971,
+      "apis": 0.968
+    },
+    {
+      "rank": 74,
+      "name": "IAI-iDAN",
+      "slm": 0.972,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 75,
+      "name": "TripleTee",
+      "slm": 0.97,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 76,
+      "name": "T07_AI",
+      "slm": 0.97,
+      "llm": 0.75,
+      "apis": null
+    },
+    {
+      "rank": 77,
+      "name": "AIO-Tan-testing",
+      "slm": 0.968,
+      "llm": null,
+      "apis": 0.603
+    },
+    {
+      "rank": 78,
+      "name": "5tobun",
+      "slm": 0.968,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 79,
+      "name": "Claude_et_al",
+      "slm": 0.966,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 80,
+      "name": "AI-team",
+      "slm": 0.963,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 81,
+      "name": "Virai",
+      "slm": 0.961,
+      "llm": null,
+      "apis": 0.796
+    },
+    {
+      "rank": 82,
+      "name": "Otter Go",
+      "slm": 0.96,
+      "llm": null,
+      "apis": 0.926
+    },
+    {
+      "rank": 83,
+      "name": "ELAOTHE",
+      "slm": 0.957,
+      "llm": null,
+      "apis": 0.994
+    },
+    {
+      "rank": 84,
+      "name": "backtracking",
+      "slm": 0.956,
+      "llm": null,
+      "apis": 0.982
+    },
+    {
+      "rank": 85,
+      "name": "qqqq1",
+      "slm": 0.956,
+      "llm": null,
+      "apis": 0.968
+    },
+    {
+      "rank": 86,
+      "name": "FITHCMUS-01",
+      "slm": 0.955,
+      "llm": null,
+      "apis": 0.953
+    },
+    {
+      "rank": 87,
+      "name": "AIO_Cats",
+      "slm": 0.954,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 88,
+      "name": "ClaudeCode",
+      "slm": 0.952,
+      "llm": null,
+      "apis": 0.912
+    },
+    {
+      "rank": 89,
+      "name": "small potatoes",
+      "slm": 0.951,
+      "llm": null,
+      "apis": 0.93
+    },
+    {
+      "rank": 90,
+      "name": "Huynh Quy La",
+      "slm": 0.949,
+      "llm": null,
+      "apis": 0.081
+    },
+    {
+      "rank": 91,
+      "name": "Antiretroviral",
+      "slm": 0.949,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 92,
+      "name": "QATop1",
+      "slm": 0.94,
+      "llm": 0.96,
+      "apis": 0.998
+    },
+    {
+      "rank": 93,
+      "name": "Oldschool",
+      "slm": 0.939,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 94,
+      "name": "Astra",
+      "slm": 0.938,
+      "llm": null,
+      "apis": 0.938
+    },
+    {
+      "rank": 95,
+      "name": "ZaloCon",
+      "slm": 0.937,
+      "llm": null,
+      "apis": 0.911
+    },
+    {
+      "rank": 96,
+      "name": "Susu",
+      "slm": 0.936,
+      "llm": null,
+      "apis": 0.188
+    },
+    {
+      "rank": 97,
+      "name": "FITHCMUS-39",
+      "slm": 0.935,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 98,
+      "name": "Roxy-Mouse",
+      "slm": 0.934,
+      "llm": null,
+      "apis": 0.063
+    },
+    {
+      "rank": 99,
+      "name": "LoneWolf",
+      "slm": 0.932,
+      "llm": null,
+      "apis": 0.932
+    },
+    {
+      "rank": 100,
+      "name": "VUbest",
+      "slm": 0.932,
+      "llm": null,
+      "apis": 0.758
+    },
+    {
+      "rank": 101,
+      "name": "undono",
+      "slm": 0.932,
+      "llm": null,
+      "apis": 0.687
+    },
+    {
+      "rank": 102,
+      "name": "Bá khí",
+      "slm": 0.931,
+      "llm": null,
+      "apis": 0.894
+    },
+    {
+      "rank": 103,
+      "name": "Huskie",
+      "slm": 0.931,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 104,
+      "name": "Scooby-Doo",
+      "slm": 0.931,
+      "llm": 0.976,
+      "apis": 0.997
+    },
+    {
+      "rank": 105,
+      "name": "AIO_Edgerunner",
+      "slm": 0.928,
+      "llm": null,
+      "apis": 0.998
+    },
+    {
+      "rank": 106,
+      "name": "P.A.",
+      "slm": 0.928,
+      "llm": null,
+      "apis": 0.742
+    },
+    {
+      "rank": 107,
+      "name": "No1-HTK",
+      "slm": 0.922,
+      "llm": null,
+      "apis": 0.864
+    },
+    {
+      "rank": 108,
+      "name": "2006coder",
+      "slm": 0.922,
+      "llm": null,
+      "apis": 0.922
+    },
+    {
+      "rank": 109,
+      "name": "Mixture of Experts",
+      "slm": 0.921,
+      "llm": null,
+      "apis": 0.917
+    },
+    {
+      "rank": 110,
+      "name": "HoiKinZalo",
+      "slm": 0.921,
+      "llm": null,
+      "apis": 0.991
+    },
+    {
+      "rank": 111,
+      "name": "Alex",
+      "slm": 0.92,
+      "llm": null,
+      "apis": 0.92
+    },
+    {
+      "rank": 112,
+      "name": "Vibe Coder",
+      "slm": 0.92,
+      "llm": 0.98,
+      "apis": 0.046
+    },
+    {
+      "rank": 113,
+      "name": "AIO - Lovisong",
+      "slm": 0.915,
+      "llm": null,
+      "apis": 0.968
+    },
+    {
+      "rank": 114,
+      "name": "AIO_LUONVUITUOI",
+      "slm": 0.915,
+      "llm": 0.915,
+      "apis": 0.982
+    },
+    {
+      "rank": 115,
+      "name": "Hien",
+      "slm": 0.913,
+      "llm": null,
+      "apis": 0.99
+    },
+    {
+      "rank": 116,
+      "name": "AIO_KoNgungBoCuoc",
+      "slm": 0.912,
+      "llm": null,
+      "apis": 0.82
+    },
+    {
+      "rank": 117,
+      "name": "C3A-Infinity",
+      "slm": 0.912,
+      "llm": 0.871,
+      "apis": 0.516
+    },
+    {
+      "rank": 118,
+      "name": "La Ming Ya Mao",
+      "slm": 0.912,
+      "llm": null,
+      "apis": 0.356
+    },
+    {
+      "rank": 119,
+      "name": "Ánh Dương",
+      "slm": 0.912,
+      "llm": null,
+      "apis": 0.98
+    },
+    {
+      "rank": 120,
+      "name": "Tây Du Ký",
+      "slm": 0.912,
+      "llm": null,
+      "apis": 0.906
+    },
+    {
+      "rank": 121,
+      "name": "ZAIO",
+      "slm": 0.907,
+      "llm": null,
+      "apis": 0.909
+    },
+    {
+      "rank": 122,
+      "name": "nlp.os",
+      "slm": 0.907,
+      "llm": null,
+      "apis": 0.698
+    },
+    {
+      "rank": 123,
+      "name": "netle",
+      "slm": 0.906,
+      "llm": null,
+      "apis": 0.545
+    },
+    {
+      "rank": 124,
+      "name": "Ngũ Đại Hào Hiệp",
+      "slm": 0.904,
+      "llm": null,
+      "apis": 0.64
+    },
+    {
+      "rank": 125,
+      "name": "FITHCMUS-36",
+      "slm": 0.904,
+      "llm": null,
+      "apis": 0.966
+    },
+    {
+      "rank": 126,
+      "name": "Agent_Reincarnated",
+      "slm": 0.903,
+      "llm": null,
+      "apis": 0.48
+    },
+    {
+      "rank": 127,
+      "name": "Kapi",
+      "slm": 0.901,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 128,
+      "name": "OOV",
+      "slm": 0.899,
+      "llm": null,
+      "apis": 0.99
+    },
+    {
+      "rank": 129,
+      "name": "shadow_garden",
+      "slm": 0.896,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 130,
+      "name": "FYT Celestia",
+      "slm": 0.895,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 131,
+      "name": "CSer",
+      "slm": 0.892,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 132,
+      "name": "FITHCMUS-29",
+      "slm": 0.892,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 133,
+      "name": "Pragmatix",
+      "slm": 0.892,
+      "llm": null,
+      "apis": 0.856
+    },
+    {
+      "rank": 134,
+      "name": "An",
+      "slm": 0.889,
+      "llm": 0.768,
+      "apis": 1
+    },
+    {
+      "rank": 135,
+      "name": "noname",
+      "slm": 0.888,
+      "llm": null,
+      "apis": 0.954
+    },
+    {
+      "rank": 136,
+      "name": "DoanChiBInh",
+      "slm": 0.887,
+      "llm": 0.926,
+      "apis": 0.99
+    },
+    {
+      "rank": 137,
+      "name": "Hcm",
+      "slm": 0.886,
+      "llm": null,
+      "apis": 0.89
+    },
+    {
+      "rank": 138,
+      "name": "AVBM",
+      "slm": 0.886,
+      "llm": null,
+      "apis": 0.682
+    },
+    {
+      "rank": 139,
+      "name": "Ankara",
+      "slm": 0.885,
+      "llm": null,
+      "apis": -0.034
+    },
+    {
+      "rank": 140,
+      "name": "No Die Can Win",
+      "slm": 0.885,
+      "llm": 0.708,
+      "apis": 0.996
+    },
+    {
+      "rank": 141,
+      "name": "big_wind",
+      "slm": 0.884,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 142,
+      "name": "alo",
+      "slm": 0.882,
+      "llm": null,
+      "apis": 0.938
+    },
+    {
+      "rank": 143,
+      "name": "95LAB",
+      "slm": 0.88,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 144,
+      "name": "AILocal",
+      "slm": 0.877,
+      "llm": null,
+      "apis": 0.05
+    },
+    {
+      "rank": 145,
+      "name": "Edgerunner",
+      "slm": 0.874,
+      "llm": null,
+      "apis": 0.874
+    },
+    {
+      "rank": 146,
+      "name": "Domino",
+      "slm": 0.873,
+      "llm": null,
+      "apis": 0.664
+    },
+    {
+      "rank": 147,
+      "name": "Sky",
+      "slm": 0.87,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 148,
+      "name": "Solo123",
+      "slm": 0.87,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 149,
+      "name": "SDSRV",
+      "slm": 0.869,
+      "llm": 0.864,
+      "apis": 0.864
+    },
+    {
+      "rank": 150,
+      "name": "Namm",
+      "slm": 0.867,
+      "llm": null,
+      "apis": 0.577
+    },
+    {
+      "rank": 151,
+      "name": "Fprinciples",
+      "slm": 0.865,
+      "llm": null,
+      "apis": 0.663
+    },
+    {
+      "rank": 152,
+      "name": "Solobolo",
+      "slm": 0.864,
+      "llm": null,
+      "apis": 0.778
+    },
+    {
+      "rank": 153,
+      "name": "gardneng",
+      "slm": 0.855,
+      "llm": null,
+      "apis": 0.992
+    },
+    {
+      "rank": 154,
+      "name": "CTAI",
+      "slm": 0.85,
+      "llm": 0.961,
+      "apis": 0.953
+    },
+    {
+      "rank": 155,
+      "name": "Trinity",
+      "slm": 0.849,
+      "llm": null,
+      "apis": 0.681
+    },
+    {
+      "rank": 156,
+      "name": "MedData VN",
+      "slm": 0.847,
+      "llm": 0.847,
+      "apis": 0.825
+    },
+    {
+      "rank": 157,
+      "name": "PTNK_AKK",
+      "slm": 0.847,
+      "llm": null,
+      "apis": 0.852
+    },
+    {
+      "rank": 158,
+      "name": "IT Du Ký",
+      "slm": 0.845,
+      "llm": null,
+      "apis": 0.992
+    },
+    {
+      "rank": 159,
+      "name": "TimTuTi",
+      "slm": 0.841,
+      "llm": 0.955,
+      "apis": 0.901
+    },
+    {
+      "rank": 160,
+      "name": "PrompTProtectors",
+      "slm": 0.833,
+      "llm": null,
+      "apis": 0.952
+    },
+    {
+      "rank": 161,
+      "name": "Out of Memory (OOM)",
+      "slm": 0.829,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 162,
+      "name": "FITHCMUS-10",
+      "slm": 0.827,
+      "llm": 0.023,
+      "apis": 0.681
+    },
+    {
+      "rank": 163,
+      "name": "Nguyễn Gia Nô",
+      "slm": 0.826,
+      "llm": null,
+      "apis": 0.84
+    },
+    {
+      "rank": 164,
+      "name": "Murphy’s Law",
+      "slm": 0.825,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 165,
+      "name": "SQUARE ONE",
+      "slm": 0.824,
+      "llm": null,
+      "apis": 0.824
+    },
+    {
+      "rank": 166,
+      "name": "Arcane",
+      "slm": 0.82,
+      "llm": null,
+      "apis": 0.936
+    },
+    {
+      "rank": 167,
+      "name": "Lifebuoys",
+      "slm": 0.81,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 168,
+      "name": "Aplus",
+      "slm": 0.808,
+      "llm": null,
+      "apis": 0.998
+    },
+    {
+      "rank": 169,
+      "name": "glhf",
+      "slm": 0.807,
+      "llm": null,
+      "apis": 0.832
+    },
+    {
+      "rank": 170,
+      "name": "con ga AI",
+      "slm": 0.804,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 171,
+      "name": "429",
+      "slm": 0.804,
+      "llm": 0.909,
+      "apis": 0.954
+    },
+    {
+      "rank": 172,
+      "name": "hans.the.nephophile",
+      "slm": 0.79,
+      "llm": null,
+      "apis": 0.762
+    },
+    {
+      "rank": 173,
+      "name": "HCMUT_E1",
+      "slm": 0.786,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 174,
+      "name": "Agentic",
+      "slm": 0.784,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 175,
+      "name": "IComeForFood",
+      "slm": 0.782,
+      "llm": null,
+      "apis": 0.779
+    },
+    {
+      "rank": 176,
+      "name": "spaceontk",
+      "slm": 0.78,
+      "llm": null,
+      "apis": 0.832
+    },
+    {
+      "rank": 177,
+      "name": "1107Bros",
+      "slm": 0.772,
+      "llm": null,
+      "apis": 0.826
+    },
+    {
+      "rank": 178,
+      "name": "Kiếm Tiền Nuôi Vợ",
+      "slm": 0.769,
+      "llm": null,
+      "apis": 0.998
+    },
+    {
+      "rank": 179,
+      "name": "FITHCMUS-3",
+      "slm": 0.764,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 180,
+      "name": "CantBeDefeated",
+      "slm": 0.758,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 181,
+      "name": "Tao là leader",
+      "slm": 0.755,
+      "llm": null,
+      "apis": 0.648
+    },
+    {
+      "rank": 182,
+      "name": "KMP - Fruc",
+      "slm": 0.755,
+      "llm": null,
+      "apis": 0.237
+    },
+    {
+      "rank": 183,
+      "name": "Sologirl",
+      "slm": 0.75,
+      "llm": null,
+      "apis": 0.998
+    },
+    {
+      "rank": 184,
+      "name": "Đụng Độ",
+      "slm": 0.75,
+      "llm": 0.922,
+      "apis": 1
+    },
+    {
+      "rank": 185,
+      "name": "TensorTonic",
+      "slm": 0.746,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 186,
+      "name": "misi gaming",
+      "slm": 0.742,
+      "llm": null,
+      "apis": 0.994
+    },
+    {
+      "rank": 187,
+      "name": "lemonade",
+      "slm": 0.741,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 188,
+      "name": "AltF4",
+      "slm": 0.741,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 189,
+      "name": "Sơn Són",
+      "slm": 0.74,
+      "llm": null,
+      "apis": 0.574
+    },
+    {
+      "rank": 190,
+      "name": "calibrated",
+      "slm": 0.739,
+      "llm": null,
+      "apis": 0.09
+    },
+    {
+      "rank": 191,
+      "name": "smolvision",
+      "slm": 0.737,
+      "llm": 0.696,
+      "apis": 0.988
+    },
+    {
+      "rank": 192,
+      "name": "Tech Titan",
+      "slm": 0.731,
+      "llm": null,
+      "apis": 0.705
+    },
+    {
+      "rank": 193,
+      "name": "Dynamo",
+      "slm": 0.721,
+      "llm": 0.904,
+      "apis": 0.923
+    },
+    {
+      "rank": 194,
+      "name": "HUNTER",
+      "slm": 0.715,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 195,
+      "name": "TodeProtocol",
+      "slm": 0.714,
+      "llm": null,
+      "apis": 0.537
+    },
+    {
+      "rank": 196,
+      "name": "lightworknoreaction",
+      "slm": 0.712,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 197,
+      "name": "temporary",
+      "slm": 0.711,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 198,
+      "name": "iTwin-huuduyenthiWin",
+      "slm": 0.708,
+      "llm": null,
+      "apis": 1
+    },
+    {
+      "rank": 199,
+      "name": "Như Một Vì Tinh Tú",
+      "slm": 0.708,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 200,
+      "name": "Haoshoku",
+      "slm": 0.704,
+      "llm": null,
+      "apis": 0.357
+    }
+  ],
+  "lifemate": [
+    {
+      "rank": 1,
+      "name": "So Far So Good",
+      "slm": 99.22,
+      "llm": null,
+      "apis": 99.55
+    },
+    {
+      "rank": 2,
+      "name": "Caro",
+      "slm": 99.21,
+      "llm": null,
+      "apis": 17.27
+    },
+    {
+      "rank": 3,
+      "name": "TrustedAI",
+      "slm": 96.66,
+      "llm": null,
+      "apis": 96.66
+    },
+    {
+      "rank": 4,
+      "name": "BXT",
+      "slm": 96.58,
+      "llm": null,
+      "apis": 96.58
+    },
+    {
+      "rank": 5,
+      "name": "Tấn Cường - Tèo",
+      "slm": 96.25,
+      "llm": null,
+      "apis": 96.25
+    },
+    {
+      "rank": 6,
+      "name": "DamTinhMienTrung",
+      "slm": 96,
+      "llm": null,
+      "apis": 95.98
+    },
+    {
+      "rank": 7,
+      "name": "67Labs",
+      "slm": 95.74,
+      "llm": null,
+      "apis": 93.72
+    },
+    {
+      "rank": 8,
+      "name": "Stupid Reseach Team",
+      "slm": 95.73,
+      "llm": null,
+      "apis": 49.45
+    },
+    {
+      "rank": 9,
+      "name": "Pawgrammers",
+      "slm": 95.72,
+      "llm": null,
+      "apis": 95.72
+    },
+    {
+      "rank": 10,
+      "name": "Piece Of Cake",
+      "slm": 95.12,
+      "llm": 95.43,
+      "apis": 95.54
+    },
+    {
+      "rank": 11,
+      "name": "Akatsuki",
+      "slm": 95,
+      "llm": null,
+      "apis": 96.43
+    },
+    {
+      "rank": 12,
+      "name": "429",
+      "slm": 94.74,
+      "llm": 74.68,
+      "apis": 94.58
+    },
+    {
+      "rank": 13,
+      "name": "QED",
+      "slm": 94.13,
+      "llm": null,
+      "apis": 92.65
+    },
+    {
+      "rank": 14,
+      "name": "daniel_nguyen",
+      "slm": 93.93,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 15,
+      "name": "Biết Thì Thưa",
+      "slm": 93.59,
+      "llm": null,
+      "apis": 93.91
+    },
+    {
+      "rank": 16,
+      "name": "Ngũ Long Tranh Bá",
+      "slm": 93.55,
+      "llm": 69.43,
+      "apis": 94.58
+    },
+    {
+      "rank": 17,
+      "name": "Manchester United",
+      "slm": 92.89,
+      "llm": null,
+      "apis": 92.89
+    },
+    {
+      "rank": 18,
+      "name": "rhinoAI",
+      "slm": 92.86,
+      "llm": null,
+      "apis": 92.86
+    },
+    {
+      "rank": 19,
+      "name": "meow",
+      "slm": 92.81,
+      "llm": null,
+      "apis": 92.78
+    },
+    {
+      "rank": 20,
+      "name": "TheKingReturn",
+      "slm": 92.16,
+      "llm": null,
+      "apis": 45.69
+    },
+    {
+      "rank": 21,
+      "name": "k vượt baseline",
+      "slm": 92.04,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 22,
+      "name": "Null & Void",
+      "slm": 91.95,
+      "llm": 85.75,
+      "apis": 91.92
+    },
+    {
+      "rank": 23,
+      "name": "TCL",
+      "slm": 91.84,
+      "llm": null,
+      "apis": 91.27
+    },
+    {
+      "rank": 24,
+      "name": "LNCG",
+      "slm": 91.78,
+      "llm": null,
+      "apis": 94.58
+    },
+    {
+      "rank": 25,
+      "name": "phoaln",
+      "slm": 91.67,
+      "llm": null,
+      "apis": 96.09
+    },
+    {
+      "rank": 26,
+      "name": "AIO_HUSTxFPT",
+      "slm": 91.43,
+      "llm": 35.82,
+      "apis": 85.47
+    },
+    {
+      "rank": 27,
+      "name": "MarkneticM83",
+      "slm": 89.38,
+      "llm": null,
+      "apis": 93.22
+    },
+    {
+      "rank": 28,
+      "name": "GHOST//AI",
+      "slm": 89.12,
+      "llm": null,
+      "apis": 74.74
+    },
+    {
+      "rank": 29,
+      "name": "Đụng Độ",
+      "slm": 89.02,
+      "llm": 33.74,
+      "apis": 90.22
+    },
+    {
+      "rank": 30,
+      "name": "zazazazazaza",
+      "slm": 89.01,
+      "llm": null,
+      "apis": 89.01
+    },
+    {
+      "rank": 31,
+      "name": "Năm anh em siêu nhân",
+      "slm": 88.69,
+      "llm": null,
+      "apis": 72.5
+    },
+    {
+      "rank": 32,
+      "name": "T07_AI",
+      "slm": 88.44,
+      "llm": null,
+      "apis": 88.22
+    },
+    {
+      "rank": 33,
+      "name": "Snakes",
+      "slm": 88.18,
+      "llm": null,
+      "apis": 78.45
+    },
+    {
+      "rank": 34,
+      "name": "change_some_thing",
+      "slm": 86.75,
+      "llm": null,
+      "apis": 86.75
+    },
+    {
+      "rank": 35,
+      "name": "AIO - Lovisong",
+      "slm": 85.84,
+      "llm": null,
+      "apis": 90.99
+    },
+    {
+      "rank": 36,
+      "name": "PTIT_Tào Phớ",
+      "slm": 84.71,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 37,
+      "name": "Hehihi",
+      "slm": 83.56,
+      "llm": null,
+      "apis": 84.56
+    },
+    {
+      "rank": 38,
+      "name": "Resonance",
+      "slm": 83.53,
+      "llm": null,
+      "apis": 92.76
+    },
+    {
+      "rank": 39,
+      "name": "Beelliards",
+      "slm": 82.29,
+      "llm": 83.3,
+      "apis": 67
+    },
+    {
+      "rank": 40,
+      "name": "mattimkhocloc",
+      "slm": 82.09,
+      "llm": 77.61,
+      "apis": 63.35
+    },
+    {
+      "rank": 41,
+      "name": "VTIT Rewriter",
+      "slm": 81.26,
+      "llm": null,
+      "apis": 81.26
+    },
+    {
+      "rank": 42,
+      "name": "TensorTonic",
+      "slm": 81.04,
+      "llm": null,
+      "apis": 95.33
+    },
+    {
+      "rank": 43,
+      "name": "TripleU",
+      "slm": 80.79,
+      "llm": 80.79,
+      "apis": 89.34
+    },
+    {
+      "rank": 44,
+      "name": "TienPhat",
+      "slm": 80.78,
+      "llm": null,
+      "apis": 90.99
+    },
+    {
+      "rank": 45,
+      "name": "bunscas",
+      "slm": 80.52,
+      "llm": null,
+      "apis": 95.31
+    },
+    {
+      "rank": 46,
+      "name": "LEK",
+      "slm": 80.48,
+      "llm": null,
+      "apis": 95.76
+    },
+    {
+      "rank": 47,
+      "name": "KoRodriBanhĐâuMàChơi",
+      "slm": 80.35,
+      "llm": 83.15,
+      "apis": null
+    },
+    {
+      "rank": 48,
+      "name": "innocent",
+      "slm": 80.08,
+      "llm": null,
+      "apis": 94.89
+    },
+    {
+      "rank": 49,
+      "name": "Đế Thính",
+      "slm": 79.31,
+      "llm": null,
+      "apis": 89.39
+    },
+    {
+      "rank": 50,
+      "name": "Wang Lin",
+      "slm": 79.27,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 51,
+      "name": "nvlk",
+      "slm": 79.2,
+      "llm": null,
+      "apis": 92.85
+    },
+    {
+      "rank": 52,
+      "name": "requirements.txt",
+      "slm": 78.7,
+      "llm": null,
+      "apis": 74.82
+    },
+    {
+      "rank": 53,
+      "name": "EnEN",
+      "slm": 78.65,
+      "llm": null,
+      "apis": 84.12
+    },
+    {
+      "rank": 54,
+      "name": "Fantastic Four",
+      "slm": 78.55,
+      "llm": null,
+      "apis": 84.22
+    },
+    {
+      "rank": 55,
+      "name": "AIO_VuaVeNhi",
+      "slm": 78.54,
+      "llm": null,
+      "apis": 84.63
+    },
+    {
+      "rank": 56,
+      "name": "Thợ Săn Tiền Giải",
+      "slm": 78.01,
+      "llm": null,
+      "apis": 78.01
+    },
+    {
+      "rank": 57,
+      "name": "AI_Cham",
+      "slm": 77.13,
+      "llm": 87.48,
+      "apis": 95.94
+    },
+    {
+      "rank": 58,
+      "name": "khanhbruhhh",
+      "slm": 77.1,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 59,
+      "name": "PHẠM HÙNG TIẾN",
+      "slm": 76.85,
+      "llm": null,
+      "apis": 73.16
+    },
+    {
+      "rank": 60,
+      "name": "Secret",
+      "slm": 76.74,
+      "llm": null,
+      "apis": 68.97
+    },
+    {
+      "rank": 61,
+      "name": "ZAIC_2_25",
+      "slm": 76.17,
+      "llm": null,
+      "apis": 96.66
+    },
+    {
+      "rank": 62,
+      "name": "Nguyễn Hoàng Gia Lô",
+      "slm": 76.12,
+      "llm": null,
+      "apis": 50.43
+    },
+    {
+      "rank": 63,
+      "name": "B.O.A.T",
+      "slm": 76.12,
+      "llm": 84.29,
+      "apis": 61.13
+    },
+    {
+      "rank": 64,
+      "name": "Nguyen",
+      "slm": 75.37,
+      "llm": 69.89,
+      "apis": 58.61
+    },
+    {
+      "rank": 65,
+      "name": "Me and my dogs",
+      "slm": 75.26,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 66,
+      "name": "Noah",
+      "slm": 74,
+      "llm": null,
+      "apis": 82.23
+    },
+    {
+      "rank": 67,
+      "name": "UIT_3ChangLinhNguLam",
+      "slm": 73.92,
+      "llm": null,
+      "apis": 56.05
+    },
+    {
+      "rank": 68,
+      "name": "MalFire",
+      "slm": 73.84,
+      "llm": null,
+      "apis": 94.93
+    },
+    {
+      "rank": 69,
+      "name": "HA",
+      "slm": 73.82,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 70,
+      "name": "HCMUTE-HCMUS",
+      "slm": 73.03,
+      "llm": null,
+      "apis": 97.28
+    },
+    {
+      "rank": 71,
+      "name": "404NotFound",
+      "slm": 72.8,
+      "llm": 78.2,
+      "apis": 60.03
+    },
+    {
+      "rank": 72,
+      "name": "ConCaNho",
+      "slm": 72.54,
+      "llm": null,
+      "apis": 81.11
+    },
+    {
+      "rank": 73,
+      "name": "RMIT_Muck",
+      "slm": 71.94,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 74,
+      "name": "wokeupat3am",
+      "slm": 71.67,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 75,
+      "name": "XMax",
+      "slm": 71.48,
+      "llm": null,
+      "apis": 95.81
+    },
+    {
+      "rank": 76,
+      "name": "Bonjour",
+      "slm": 71.38,
+      "llm": null,
+      "apis": 69.61
+    },
+    {
+      "rank": 77,
+      "name": "CCAgent",
+      "slm": 70.94,
+      "llm": null,
+      "apis": 63.16
+    },
+    {
+      "rank": 78,
+      "name": "DuckDat",
+      "slm": 70.85,
+      "llm": null,
+      "apis": 78.97
+    },
+    {
+      "rank": 79,
+      "name": "welcomeToHCM",
+      "slm": 70.84,
+      "llm": null,
+      "apis": 86.82
+    },
+    {
+      "rank": 80,
+      "name": "KNHT",
+      "slm": 70.73,
+      "llm": null,
+      "apis": 78.91
+    },
+    {
+      "rank": 81,
+      "name": "Kiếm Tiền Nuôi Vợ",
+      "slm": 70.49,
+      "llm": null,
+      "apis": 64.67
+    },
+    {
+      "rank": 82,
+      "name": "Ulala",
+      "slm": 70.47,
+      "llm": null,
+      "apis": 68.67
+    },
+    {
+      "rank": 83,
+      "name": "WinOrWin",
+      "slm": 70.29,
+      "llm": null,
+      "apis": 70.29
+    },
+    {
+      "rank": 84,
+      "name": "GenAI",
+      "slm": 70.23,
+      "llm": 70.84,
+      "apis": 83.73
+    },
+    {
+      "rank": 85,
+      "name": "SOC_AI_TRANSFORM",
+      "slm": 70.02,
+      "llm": null,
+      "apis": 70.02
+    },
+    {
+      "rank": 86,
+      "name": "Pairameters",
+      "slm": 69.84,
+      "llm": null,
+      "apis": 64.85
+    },
+    {
+      "rank": 87,
+      "name": "Nhân Vin",
+      "slm": 69.72,
+      "llm": null,
+      "apis": 57.65
+    },
+    {
+      "rank": 88,
+      "name": "COFLAR AI",
+      "slm": 69.68,
+      "llm": null,
+      "apis": 49.93
+    },
+    {
+      "rank": 89,
+      "name": "BDonTOP",
+      "slm": 69.64,
+      "llm": null,
+      "apis": 69.78
+    },
+    {
+      "rank": 90,
+      "name": "ZaloT",
+      "slm": 69.3,
+      "llm": null,
+      "apis": 67.52
+    },
+    {
+      "rank": 91,
+      "name": "Chiếc lá",
+      "slm": 69.3,
+      "llm": null,
+      "apis": 0
+    },
+    {
+      "rank": 92,
+      "name": "ForFun",
+      "slm": 69.25,
+      "llm": null,
+      "apis": 52.25
+    },
+    {
+      "rank": 93,
+      "name": "Shiba",
+      "slm": 69.02,
+      "llm": null,
+      "apis": 94.28
+    },
+    {
+      "rank": 94,
+      "name": "Oneman",
+      "slm": 68.82,
+      "llm": null,
+      "apis": 68.39
+    },
+    {
+      "rank": 95,
+      "name": "NemoAI",
+      "slm": 68.7,
+      "llm": null,
+      "apis": 68.29
+    },
+    {
+      "rank": 96,
+      "name": "VINAGENT",
+      "slm": 68.61,
+      "llm": null,
+      "apis": 67.83
+    },
+    {
+      "rank": 97,
+      "name": "LoiDiRieng",
+      "slm": 68.49,
+      "llm": null,
+      "apis": 26.68
+    },
+    {
+      "rank": 98,
+      "name": "chanh",
+      "slm": 68.45,
+      "llm": null,
+      "apis": 70.91
+    },
+    {
+      "rank": 99,
+      "name": "S-Team",
+      "slm": 68.32,
+      "llm": null,
+      "apis": 50.74
+    },
+    {
+      "rank": 100,
+      "name": "Oldschool",
+      "slm": 68.26,
+      "llm": null,
+      "apis": 87.86
+    },
+    {
+      "rank": 101,
+      "name": "TheCity",
+      "slm": 68.07,
+      "llm": 61.29,
+      "apis": 85.48
+    },
+    {
+      "rank": 102,
+      "name": "33a9",
+      "slm": 68.05,
+      "llm": null,
+      "apis": 86.38
+    },
+    {
+      "rank": 103,
+      "name": "SpiderMan",
+      "slm": 68.05,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 104,
+      "name": "DUCNTM",
+      "slm": 67.87,
+      "llm": null,
+      "apis": 59.42
+    },
+    {
+      "rank": 105,
+      "name": "Chivas",
+      "slm": 67.77,
+      "llm": null,
+      "apis": 75.13
+    },
+    {
+      "rank": 106,
+      "name": "NPGL",
+      "slm": 67.73,
+      "llm": null,
+      "apis": 78.74
+    },
+    {
+      "rank": 107,
+      "name": "Chạy đâu con sâu",
+      "slm": 67.64,
+      "llm": null,
+      "apis": 96.51
+    },
+    {
+      "rank": 108,
+      "name": "AAU",
+      "slm": 67.17,
+      "llm": 65.46,
+      "apis": 63.74
+    },
+    {
+      "rank": 109,
+      "name": "chilly_chilly",
+      "slm": 66.93,
+      "llm": 75.29,
+      "apis": 61.27
+    },
+    {
+      "rank": 110,
+      "name": "UIT_4M1Z",
+      "slm": 66.91,
+      "llm": null,
+      "apis": 64.31
+    },
+    {
+      "rank": 111,
+      "name": "Susanoo",
+      "slm": 66.74,
+      "llm": 77.33,
+      "apis": 90.15
+    },
+    {
+      "rank": 112,
+      "name": "SOH_12A7",
+      "slm": 66.63,
+      "llm": null,
+      "apis": 96.85
+    },
+    {
+      "rank": 113,
+      "name": "Arrebol",
+      "slm": 66.61,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 114,
+      "name": "Polyskill",
+      "slm": 66.6,
+      "llm": null,
+      "apis": 55.17
+    },
+    {
+      "rank": 115,
+      "name": "Max20characters",
+      "slm": 66.6,
+      "llm": 61.83,
+      "apis": 54.85
+    },
+    {
+      "rank": 116,
+      "name": "BKU-TraiĐẹpLạnhLùng",
+      "slm": 66.56,
+      "llm": null,
+      "apis": 66.56
+    },
+    {
+      "rank": 117,
+      "name": "Hallucination Nation",
+      "slm": 66.48,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 118,
+      "name": "VUbest",
+      "slm": 66.43,
+      "llm": null,
+      "apis": 64.71
+    },
+    {
+      "rank": 119,
+      "name": "vibecolor",
+      "slm": 66.35,
+      "llm": null,
+      "apis": 56.61
+    },
+    {
+      "rank": 120,
+      "name": "kusuki",
+      "slm": 66.09,
+      "llm": null,
+      "apis": 57.09
+    },
+    {
+      "rank": 121,
+      "name": "Trí tuệ Nhân đạo",
+      "slm": 66.04,
+      "llm": null,
+      "apis": 64.65
+    },
+    {
+      "rank": 122,
+      "name": "Auren",
+      "slm": 66,
+      "llm": null,
+      "apis": 61.67
+    },
+    {
+      "rank": 123,
+      "name": "HCMUT_ACEgentic",
+      "slm": 65.74,
+      "llm": null,
+      "apis": 81.28
+    },
+    {
+      "rank": 124,
+      "name": "6h50",
+      "slm": 65.54,
+      "llm": null,
+      "apis": 65.54
+    },
+    {
+      "rank": 125,
+      "name": "Vakad_AI",
+      "slm": 65.48,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 126,
+      "name": "CSer",
+      "slm": 65.39,
+      "llm": null,
+      "apis": 63.21
+    },
+    {
+      "rank": 127,
+      "name": "Giang Hồ Tranh Bá",
+      "slm": 65.24,
+      "llm": null,
+      "apis": 38.42
+    },
+    {
+      "rank": 128,
+      "name": "Ngũ Đại Hào Hiệp",
+      "slm": 65.22,
+      "llm": null,
+      "apis": 34.91
+    },
+    {
+      "rank": 129,
+      "name": "Stefansayno",
+      "slm": 65.18,
+      "llm": null,
+      "apis": 91.11
+    },
+    {
+      "rank": 130,
+      "name": "StopLoss",
+      "slm": 65.15,
+      "llm": null,
+      "apis": 82.9
+    },
+    {
+      "rank": 131,
+      "name": "Rhino Ghost",
+      "slm": 65.04,
+      "llm": null,
+      "apis": 64.98
+    },
+    {
+      "rank": 132,
+      "name": "claude-codex",
+      "slm": 64.98,
+      "llm": null,
+      "apis": 97.32
+    },
+    {
+      "rank": 133,
+      "name": "PTIT.AI",
+      "slm": 64.92,
+      "llm": null,
+      "apis": 57.29
+    },
+    {
+      "rank": 134,
+      "name": "OFA",
+      "slm": 64.88,
+      "llm": 64.88,
+      "apis": 58.97
+    },
+    {
+      "rank": 135,
+      "name": "Contrastive",
+      "slm": 64.77,
+      "llm": null,
+      "apis": 28.93
+    },
+    {
+      "rank": 136,
+      "name": "AIbou",
+      "slm": 64.64,
+      "llm": null,
+      "apis": 62.22
+    },
+    {
+      "rank": 137,
+      "name": "Lythuidich",
+      "slm": 64.63,
+      "llm": null,
+      "apis": 63.94
+    },
+    {
+      "rank": 138,
+      "name": "Roxy-Mouse",
+      "slm": 64.63,
+      "llm": null,
+      "apis": 73.5
+    },
+    {
+      "rank": 139,
+      "name": "khoai_tay_chien",
+      "slm": 64.62,
+      "llm": null,
+      "apis": 45.15
+    },
+    {
+      "rank": 140,
+      "name": "UIT - L&K",
+      "slm": 64.53,
+      "llm": 60.09,
+      "apis": 22.04
+    },
+    {
+      "rank": 141,
+      "name": "CTAI",
+      "slm": 64.52,
+      "llm": 5.99,
+      "apis": 61.12
+    },
+    {
+      "rank": 142,
+      "name": "Phamily",
+      "slm": 64.5,
+      "llm": null,
+      "apis": 21.93
+    },
+    {
+      "rank": 143,
+      "name": "Onepunch",
+      "slm": 64.5,
+      "llm": null,
+      "apis": 79.06
+    },
+    {
+      "rank": 144,
+      "name": "shadow_garden",
+      "slm": 64.47,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 145,
+      "name": "3B",
+      "slm": 64.46,
+      "llm": null,
+      "apis": 90.97
+    },
+    {
+      "rank": 146,
+      "name": "TheBegginer",
+      "slm": 64.46,
+      "llm": null,
+      "apis": 59.23
+    },
+    {
+      "rank": 147,
+      "name": "No Die Can Win",
+      "slm": 64.45,
+      "llm": null,
+      "apis": 62.88
+    },
+    {
+      "rank": 148,
+      "name": "Me and my devil",
+      "slm": 64.32,
+      "llm": 54.5,
+      "apis": 60.44
+    },
+    {
+      "rank": 149,
+      "name": "AIO_Pentatonis",
+      "slm": 64.3,
+      "llm": null,
+      "apis": 30.73
+    },
+    {
+      "rank": 150,
+      "name": "HUST-COTS",
+      "slm": 64.26,
+      "llm": null,
+      "apis": 60.01
+    },
+    {
+      "rank": 151,
+      "name": "bài tập về nhà",
+      "slm": 64.15,
+      "llm": null,
+      "apis": 91.37
+    },
+    {
+      "rank": 152,
+      "name": "came to conquer",
+      "slm": 64.13,
+      "llm": null,
+      "apis": 90.98
+    },
+    {
+      "rank": 153,
+      "name": "NAS et al",
+      "slm": 64.08,
+      "llm": null,
+      "apis": 64.08
+    },
+    {
+      "rank": 154,
+      "name": "TTQ",
+      "slm": 64.05,
+      "llm": null,
+      "apis": 64.05
+    },
+    {
+      "rank": 155,
+      "name": "zAIo_Astra",
+      "slm": 63.97,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 156,
+      "name": "Avengers",
+      "slm": 63.95,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 157,
+      "name": "GiaPhuocThinh",
+      "slm": 63.9,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 158,
+      "name": "Fprinciples",
+      "slm": 63.85,
+      "llm": null,
+      "apis": 41.61
+    },
+    {
+      "rank": 159,
+      "name": "The 3 good boys",
+      "slm": 63.68,
+      "llm": null,
+      "apis": 82.4
+    },
+    {
+      "rank": 160,
+      "name": "Ngan",
+      "slm": 63.65,
+      "llm": null,
+      "apis": 96.69
+    },
+    {
+      "rank": 161,
+      "name": "zitzangzuize",
+      "slm": 63.63,
+      "llm": null,
+      "apis": 62.19
+    },
+    {
+      "rank": 162,
+      "name": "Galaxy Cyclone",
+      "slm": 63.63,
+      "llm": null,
+      "apis": 93.13
+    },
+    {
+      "rank": 163,
+      "name": "VN1DC",
+      "slm": 63.63,
+      "llm": null,
+      "apis": 85.15
+    },
+    {
+      "rank": 164,
+      "name": "Silent Prayer",
+      "slm": 63.59,
+      "llm": null,
+      "apis": 68.7
+    },
+    {
+      "rank": 165,
+      "name": "dễ thương ko",
+      "slm": 63.54,
+      "llm": null,
+      "apis": 91.18
+    },
+    {
+      "rank": 166,
+      "name": "Scooby-Doo",
+      "slm": 63.53,
+      "llm": null,
+      "apis": 70.89
+    },
+    {
+      "rank": 167,
+      "name": "AIO-SCOAI",
+      "slm": 63.44,
+      "llm": null,
+      "apis": 91.76
+    },
+    {
+      "rank": 168,
+      "name": "MondayCouple",
+      "slm": 63.4,
+      "llm": null,
+      "apis": 63.4
+    },
+    {
+      "rank": 169,
+      "name": "MakeECVGreat",
+      "slm": 63.28,
+      "llm": 51.28,
+      "apis": null
+    },
+    {
+      "rank": 170,
+      "name": "TripleTrouble",
+      "slm": 63.23,
+      "llm": null,
+      "apis": 47.85
+    },
+    {
+      "rank": 171,
+      "name": "Tuatconhilo",
+      "slm": 63.17,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 172,
+      "name": "QATop1",
+      "slm": 63.16,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 173,
+      "name": "Sirtual",
+      "slm": 63.01,
+      "llm": 15.91,
+      "apis": 53.48
+    },
+    {
+      "rank": 174,
+      "name": "Overfit",
+      "slm": 62.92,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 175,
+      "name": "THE ALCHEMISTS",
+      "slm": 62.76,
+      "llm": null,
+      "apis": 62.04
+    },
+    {
+      "rank": 176,
+      "name": "AIO_E401",
+      "slm": 62.75,
+      "llm": null,
+      "apis": 64.08
+    },
+    {
+      "rank": 177,
+      "name": "Zalophobia",
+      "slm": 62.75,
+      "llm": null,
+      "apis": 10.54
+    },
+    {
+      "rank": 178,
+      "name": "LoRagent",
+      "slm": 62.74,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 179,
+      "name": "Claude_et_al",
+      "slm": 62.64,
+      "llm": null,
+      "apis": 60.83
+    },
+    {
+      "rank": 180,
+      "name": "PTIT_OutOfToken",
+      "slm": 62.64,
+      "llm": null,
+      "apis": 62.11
+    },
+    {
+      "rank": 181,
+      "name": "HABIBIES in DUBAI",
+      "slm": 62.61,
+      "llm": null,
+      "apis": 62.61
+    },
+    {
+      "rank": 182,
+      "name": "ITN",
+      "slm": 62.61,
+      "llm": null,
+      "apis": 59.47
+    },
+    {
+      "rank": 183,
+      "name": "AIO_Cats",
+      "slm": 62.57,
+      "llm": null,
+      "apis": 60.88
+    },
+    {
+      "rank": 184,
+      "name": "C3A-Infinity",
+      "slm": 62.52,
+      "llm": null,
+      "apis": 55.4
+    },
+    {
+      "rank": 185,
+      "name": "Team A",
+      "slm": 62.51,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 186,
+      "name": "Neko Core",
+      "slm": 62.5,
+      "llm": null,
+      "apis": 95.49
+    },
+    {
+      "rank": 187,
+      "name": "Maybe Agent Not Me",
+      "slm": 62.39,
+      "llm": null,
+      "apis": 48.56
+    },
+    {
+      "rank": 188,
+      "name": "AIO-Baseline",
+      "slm": 62.31,
+      "llm": null,
+      "apis": 45.05
+    },
+    {
+      "rank": 189,
+      "name": "Weamis",
+      "slm": 62.28,
+      "llm": null,
+      "apis": 41.2
+    },
+    {
+      "rank": 190,
+      "name": "Aegent Syelf",
+      "slm": 62.13,
+      "llm": null,
+      "apis": 78.07
+    },
+    {
+      "rank": 191,
+      "name": "NTT Clauxet-AnyHear",
+      "slm": 62.05,
+      "llm": null,
+      "apis": 63.17
+    },
+    {
+      "rank": 192,
+      "name": "Hephaestus",
+      "slm": 62.01,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 193,
+      "name": "Jason",
+      "slm": 61.99,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 194,
+      "name": "Huskie",
+      "slm": 61.93,
+      "llm": null,
+      "apis": 94.05
+    },
+    {
+      "rank": 195,
+      "name": "Như một vì tinh tú",
+      "slm": 61.87,
+      "llm": null,
+      "apis": 62.69
+    },
+    {
+      "rank": 196,
+      "name": "AIO_BaKhiGalaxy",
+      "slm": 61.8,
+      "llm": null,
+      "apis": null
+    },
+    {
+      "rank": 197,
+      "name": "Spartans-ETL",
+      "slm": 61.76,
+      "llm": null,
+      "apis": 96.56
+    },
+    {
+      "rank": 198,
+      "name": "247M",
+      "slm": 61.72,
+      "llm": null,
+      "apis": 60.87
+    },
+    {
+      "rank": 199,
+      "name": "TAMCA",
+      "slm": 61.68,
+      "llm": null,
+      "apis": 60.29
+    },
+    {
+      "rank": 200,
+      "name": "Lyoko",
+      "slm": 61.67,
+      "llm": null,
+      "apis": 56.31
+    }
+  ]
+}

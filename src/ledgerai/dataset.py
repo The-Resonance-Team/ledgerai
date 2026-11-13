@@ -1,0 +1,2327 @@
+"""Semantic layer: turn heterogeneous business files into standard tables."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from datetime import date, datetime
+from pathlib import Path
+
+import pandas as pd
+
+from .loaders import Table, load_business
+from .normalize import norm_col, norm_key, parse_date, parse_hour, parse_number
+from .periods import Period, previous_period
+
+
+_STATUS_DONE = {
+    "xong",
+    "hoan thanh",
+    "hoan tat",
+    "da giao",
+    "giao thanh cong",
+    "completed",
+    "thanh cong",
+    "ok",
+    "da lay",
+}
+_STATUS_CANCEL = {"huy", "da huy", "khach huy", "huy don", "cancelled", "canceled"}
+_STATUS_RETURN = {
+    "tra hang",
+    "doi tra",
+    "hoan tra",
+    "tra lai",
+    "hang tra ve",
+    "tra ve",
+    "returned",
+    "return",
+    "khach tra",
+}
+_STATUS_SHIP = {
+    "dang giao",
+    "cho giao",
+    "dang van chuyen",
+    "van chuyen",
+    "dang xu ly",
+    "dang chuan bi",
+    "shipping",
+    "pending",
+}
+
+
+def normalize_status(value: object) -> str:
+    key = norm_key(value)
+    if not key:
+        return "unknown"
+    if (
+        key in _STATUS_CANCEL
+        or re.search(r"(?<![a-z0-9])huy(?![a-z0-9])", key)
+        or key in {"cancel", "canceled", "cancelled", "void"}
+    ):
+        return "cancelled"
+    if (
+        key in _STATUS_RETURN
+        or "tra hang" in key
+        or "doi tra" in key
+        or "hoan tra" in key
+        or "hoan hang" in key
+        or "hoan lai" in key
+        or "hoan tien" in key
+    ):
+        return "returned"
+    if key in _STATUS_SHIP or "dang giao" in key or "cho giao" in key:
+        return "shipping"
+    if key in _STATUS_DONE or "hoan thanh" in key or "xong" in key:
+        return "completed"
+    return "other"
+
+
+def _status_priority(values) -> str:
+    s = set(values)
+    for status in ("cancelled", "returned", "shipping", "completed"):
+        if status in s:
+            return status
+    return "other"
+
+
+def _pick(df: pd.DataFrame, role_cols: dict, role: str) -> str | None:
+    return role_cols.get(role)
+
+
+def _to_num(series: pd.Series) -> pd.Series:
+    return series.map(parse_number).astype("float64")
+
+
+def _drop_seen(df: pd.DataFrame, seen: set, columns: list[str]) -> pd.DataFrame:
+    """Drop rows already present in an earlier file/sheet, keeping in-file rows."""
+    if df.empty or not columns:
+        return df
+    present = [column for column in columns if column in df.columns]
+    if not present:
+        return df
+    keys = list(zip(*(df[column].astype(str) for column in present)))
+    mask = [key in seen for key in keys]
+    seen.update(keys)
+    if not any(mask):
+        return df
+    return df[~pd.Series(mask, index=df.index)]
+
+
+def _drop_invalid_lines(df: pd.DataFrame, cols: dict) -> pd.DataFrame:
+    """Drop summary rows that repeat a product name but carry no quantity/unit."""
+    quantity_col = cols.get("quantity")
+    if not quantity_col or quantity_col not in df.columns:
+        return df
+    quantity = _to_num(df[quantity_col])
+    if cols.get("unit") and cols["unit"] in df.columns:
+        unit_blank = df[cols["unit"]].astype(str).str.strip().eq("")
+    else:
+        unit_blank = pd.Series(True, index=df.index)
+    bad = quantity.isna() & unit_blank
+    return df[~bad] if bad.any() else df
+
+
+def _drop_footer_rows(df: pd.DataFrame, cols: dict) -> pd.DataFrame:
+    """Drop sheet total rows such as \"Cộng\" or \"Tổng cộng\"."""
+    product_col = cols.get("product")
+    if not product_col or product_col not in df.columns:
+        return df
+    keys = df[product_col].map(norm_key)
+    footer = keys.str.match(
+        r"^(tong|cong)( (cong|tien|thang|nam|quy|ngay|tuan)\b.*)?$", na=False
+    )
+    return df[~footer] if footer.any() else df
+
+
+def _drop_complete_duplicates(df: pd.DataFrame, order_col: str | None) -> pd.DataFrame:
+    """Drop repeated rows that carry an order id, before blanks are filled."""
+    if not order_col or order_col not in df.columns:
+        return df
+    present = df[order_col].astype(str).str.strip().ne("")
+    if not present.any():
+        return df
+    subset = df[present]
+    duplicates = subset.duplicated(keep="first")
+    if not duplicates.any():
+        return df
+    return df.drop(index=subset.index[duplicates])
+
+
+def _to_date(series: pd.Series) -> pd.Series:
+    return series.map(parse_date)
+
+
+def _plain_date(value: object) -> object:
+    if isinstance(value, datetime):
+        return value.date()
+    return value
+
+
+def _to_date_with_sheet(series: pd.Series, table: Table) -> pd.Series:
+    """Parse dates, filling year-less day/month values from the sheet name."""
+    parsed = series.map(parse_date)
+    year_match = re.search(r"(20\d{2})", f"{table.sheet or ''} {table.name}")
+    if not year_match:
+        return parsed
+    year = int(year_match.group(1))
+    for index, value in series.items():
+        if parsed.loc[index] is not None:
+            continue
+        text = str(value).strip()
+        match = re.match(r"^(\d{1,2})\s*(?:[/\-.]|thg|thang)\s*(\d{1,2})$", text)
+        if not match:
+            continue
+        day, month = int(match.group(1)), int(match.group(2))
+        try:
+            parsed.loc[index] = date(year, month, day)
+        except ValueError:
+            continue
+    return parsed
+
+
+@dataclass
+class Dataset:
+    business_id: str
+    orders: pd.DataFrame
+    lines: pd.DataFrame
+    products: pd.DataFrame
+    purchases: pd.DataFrame
+    purchase_lines: pd.DataFrame
+    tables: list[Table]
+    inventory: pd.DataFrame = None  # type: ignore[assignment]
+    tradeins: pd.DataFrame = None  # type: ignore[assignment]
+    warranties: pd.DataFrame = None  # type: ignore[assignment]
+    employees: pd.DataFrame = None  # type: ignore[assignment]
+    expenses: pd.DataFrame = None  # type: ignore[assignment]
+    drugs: pd.DataFrame = None  # type: ignore[assignment]
+    customers: pd.DataFrame = None  # type: ignore[assignment]
+    conversions: tuple = None  # type: ignore[assignment]
+
+    @classmethod
+    def load(cls, biz_dir: Path) -> "Dataset":
+        tables = load_business(Path(biz_dir))
+        return cls.from_tables(Path(biz_dir).name, tables)
+
+    @classmethod
+    def from_tables(cls, business_id: str, tables: list[Table]) -> "Dataset":
+        from .profile import infer_table_role, profile_table
+
+        profiles = {id(t): profile_table(t) for t in tables}
+        roles = {id(t): infer_table_role(profiles[id(t)]) for t in tables}
+
+        order_tables = [t for t in tables if roles[id(t)] == "orders"]
+        line_tables = [t for t in tables if roles[id(t)] == "order_lines"]
+        # Delivery notes repeat sales quantities without prices. When priced
+        # sales lines exist, keep only those to avoid double counting.
+        priced_lines = [
+            t
+            for t in line_tables
+            if profiles[id(t)].roles.get("amount") or profiles[id(t)].roles.get("price")
+        ]
+        if priced_lines:
+            line_tables = priced_lines
+        product_tables = [t for t in tables if roles[id(t)] == "products"]
+        purchase_tables = [
+            t for t in tables if roles[id(t)] in {"purchases", "purchase_lines"}
+        ]
+        conversion_tables = [t for t in tables if roles[id(t)] == "conversions"]
+
+        conversions = cls._build_conversions(tables, profiles)
+        customers = cls._build_customers(tables, profiles, roles)
+        orders = cls._build_orders(order_tables, line_tables, profiles)
+        if not customers.empty and not orders.empty:
+            id_name = (
+                customers[customers["name"].astype(str).str.strip() != ""]
+                .drop_duplicates(subset=["customer_id"])
+                .set_index("customer_id")["name"]
+            )
+            blank = orders["customer"].astype(str).str.strip() == ""
+            if blank.any() and len(id_name):
+                mapped = (
+                    orders.loc[blank, "customer_id"]
+                    .astype(str)
+                    .str.strip()
+                    .map(id_name)
+                )
+                orders.loc[blank, "customer"] = mapped.fillna("")
+            group_map = (
+                customers[customers["group"].astype(str).str.strip() != ""]
+                .drop_duplicates(subset=["customer_id"])
+                .set_index("customer_id")["group"]
+            )
+            orders["customer_group"] = (
+                orders["customer_id"].astype(str).str.strip().map(group_map).fillna("")
+            )
+        lines = cls._build_lines(line_tables, orders, profiles, conversions)
+        products = cls._build_products(product_tables, lines, profiles)
+        # Product masters often carry the name; order lines only carry the id.
+        if (
+            not products.empty
+            and "product_id" in products.columns
+            and "product_id" in lines.columns
+        ):
+            named = products[
+                (products["product"].astype(str).str.strip() != "")
+                & (
+                    products["product"].astype(str).str.strip()
+                    != products["product_id"].astype(str).str.strip()
+                )
+            ]
+            if not named.empty:
+                id_name = named.drop_duplicates(subset=["product_id"]).set_index(
+                    "product_id"
+                )["product"]
+                blank = lines["product"].astype(str).str.strip() == ""
+                if blank.any():
+                    mapped = (
+                        lines.loc[blank, "product_id"]
+                        .astype(str)
+                        .str.strip()
+                        .map(id_name)
+                    )
+                    lines.loc[blank, "product"] = mapped.fillna("")
+        # Attach product categories to lines for category-level questions.
+        if (
+            not products.empty
+            and "category" in products.columns
+            and "product" in lines.columns
+        ):
+            categorized = products[products["category"].astype(str).str.strip() != ""]
+            filled = pd.Series("", index=lines.index, dtype=object)
+            if (
+                "product_id" in lines.columns
+                and "product_id" in categorized.columns
+                and not categorized.empty
+            ):
+                # Product IDs survive case and spacing differences between files.
+                id_map = (
+                    categorized[categorized["product_id"].astype(str).str.strip() != ""]
+                    .drop_duplicates(subset=["product_id"])
+                    .set_index("product_id")["category"]
+                )
+                if len(id_map):
+                    filled = (
+                        lines["product_id"].astype(str).str.strip().map(id_map)
+                    ).fillna("")
+            if not categorized.empty:
+                name_map = (
+                    categorized.assign(_key=categorized["product"].map(norm_key))
+                    .drop_duplicates(subset=["_key"])
+                    .set_index("_key")["category"]
+                )
+                by_name = lines["product"].map(norm_key).map(name_map).fillna("")
+                filled = filled.where(filled.astype(str).str.strip() != "", by_name)
+            lines["category"] = lines["category"].where(
+                lines["category"].astype(str).str.strip() != "", filled
+            )
+        purchases, purchase_lines = cls._build_purchases(purchase_tables, profiles)
+        if (
+            not purchase_lines.empty
+            and not products.empty
+            and "product_id" in products.columns
+        ):
+            id_map = (
+                products[products["product_id"].astype(str).str.strip() != ""]
+                .drop_duplicates(subset=["product_id"])
+                .set_index("product_id")["product"]
+            )
+            if len(id_map):
+                mapped = purchase_lines["product"].map(id_map)
+                purchase_lines["product"] = mapped.fillna(purchase_lines["product"])
+        inventory = cls._build_inventory(tables, profiles, roles)
+        if (
+            inventory is not None
+            and not inventory.empty
+            and not products.empty
+            and "product_id" in products.columns
+        ):
+            named = products[products["product"].astype(str).str.strip() != ""]
+            if not named.empty:
+                id_name = named.drop_duplicates(subset=["product_id"]).set_index(
+                    "product_id"
+                )["product"]
+                mapped = inventory["product_id"].astype(str).str.strip().map(id_name)
+                needs_name = (inventory["product"].astype(str).str.strip() == "") | (
+                    inventory["product"].astype(str).str.strip()
+                    == inventory["product_id"].astype(str).str.strip()
+                )
+                inventory["product"] = inventory["product"].where(
+                    ~needs_name, mapped.fillna(inventory["product"])
+                )
+        tradeins = cls._build_tradeins(tables, profiles, roles)
+        warranties = cls._build_warranties(tables, profiles, roles)
+        employees = cls._build_employees(tables, profiles, roles)
+        expenses = cls._build_expenses(tables, profiles, roles)
+        drugs = cls._build_drugs(tables, profiles, roles)
+        if not drugs.empty and "product_id" in lines.columns:
+            drug_map = drugs.set_index("product_id")["prescription"]
+            lines["prescription"] = (
+                lines["product_id"].astype(str).str.strip().map(drug_map).fillna(False)
+            )
+            ingredient_map = drugs.set_index("product_id")["ingredient"]
+            lines["ingredient"] = (
+                lines["product_id"]
+                .astype(str)
+                .str.strip()
+                .map(ingredient_map)
+                .fillna("")
+            )
+        return cls(
+            business_id,
+            orders,
+            lines,
+            products,
+            purchases,
+            purchase_lines,
+            tables,
+            inventory,
+            tradeins,
+            warranties,
+            employees,
+            expenses,
+            drugs,
+            customers,
+            conversions,
+        )
+
+    # --------------------------------------------------------------- ledgers
+    @classmethod
+    def _build_tradeins(cls, tables, profiles, roles) -> pd.DataFrame:
+        frames = []
+        for table in tables:
+            if roles[id(table)] != "tradeins":
+                continue
+            cols = profiles[id(table)].roles
+            df = table.df
+            date_col = cols.get("date")
+            amount_col = cols.get("amount") or cols.get("price") or cols.get("total")
+            if not date_col or not amount_col:
+                continue
+            out = pd.DataFrame(index=df.index)
+            out["date"] = _to_date(df[date_col])
+            out["amount"] = _to_num(df[amount_col])
+            out["customer"] = (
+                df[cols["customer"]].astype(str).str.strip()
+                if cols.get("customer")
+                else ""
+            )
+            out["note"] = (
+                df[cols["note"]].astype(str).str.strip() if cols.get("note") else ""
+            )
+            frames.append(out)
+        if not frames:
+            return pd.DataFrame(columns=["date", "amount", "customer", "note"])
+        return pd.concat(frames, ignore_index=True)
+
+    @classmethod
+    def _build_warranties(cls, tables, profiles, roles) -> pd.DataFrame:
+        frames = []
+        for table in tables:
+            if roles[id(table)] != "warranty":
+                continue
+            cols = profiles[id(table)].roles
+            df = table.df
+            date_col = cols.get("date")
+            if not date_col:
+                continue
+            out = pd.DataFrame(index=df.index)
+            out["date"] = _to_date(df[date_col])
+            out["customer"] = (
+                df[cols["customer"]].astype(str).str.strip()
+                if cols.get("customer")
+                else ""
+            )
+            frames.append(out)
+        if not frames:
+            return pd.DataFrame(columns=["date", "customer"])
+        return pd.concat(frames, ignore_index=True)
+
+    @classmethod
+    def _build_employees(cls, tables, profiles, roles) -> pd.DataFrame:
+        frames = []
+        for table in tables:
+            if roles[id(table)] != "employees":
+                continue
+            cols = profiles[id(table)].roles
+            df = table.df
+            name_col = cols.get("employee")
+            if not name_col:
+                for candidate in df.columns:
+                    key = norm_key(candidate)
+                    if key in {"ho ten", "ten", "ten tho", "ten nhan vien"}:
+                        name_col = candidate
+                        break
+            rate_col = None
+            for candidate in df.columns:
+                key = norm_key(candidate)
+                if "hoa hong" in key or "commission" in key:
+                    rate_col = candidate
+                    break
+            if not name_col or not rate_col:
+                continue
+            out = pd.DataFrame(index=df.index)
+            out["employee"] = df[name_col].astype(str).str.strip()
+            out["rate"] = _to_num(df[rate_col])
+            frames.append(out)
+        if not frames:
+            return pd.DataFrame(columns=["employee", "rate"])
+        return pd.concat(frames, ignore_index=True)
+
+    @classmethod
+    def _build_expenses(cls, tables, profiles, roles) -> pd.DataFrame:
+        frames = []
+        for table in tables:
+            if roles[id(table)] != "expenses":
+                continue
+            cols = profiles[id(table)].roles
+            df = table.df
+            date_col = cols.get("date")
+            amount_col = cols.get("amount") or cols.get("total")
+            if not date_col or not amount_col:
+                continue
+            out = pd.DataFrame(index=df.index)
+            out["date"] = _to_date(df[date_col])
+            out["amount"] = _to_num(df[amount_col])
+            out["category"] = (
+                df[cols["category"]].astype(str).str.strip()
+                if cols.get("category")
+                else ""
+            )
+            frames.append(out)
+        if not frames:
+            return pd.DataFrame(columns=["date", "amount", "category"])
+        return pd.concat(frames, ignore_index=True)
+
+    @classmethod
+    def _build_drugs(cls, tables, profiles, roles) -> pd.DataFrame:
+        frames = []
+        for table in tables:
+            cols = profiles[id(table)].roles
+            df = table.df
+            prescription_col = None
+            ingredient_col = None
+            for candidate in df.columns:
+                key = norm_key(candidate)
+                if "thuoc ke don" in key or "ke don" in key or "ban theo don" in key:
+                    prescription_col = candidate
+                if "hoat chat" in key or "thanh phan" in key:
+                    ingredient_col = candidate
+            product_col = cols.get("product_id") or cols.get("product")
+            if not product_col or not prescription_col:
+                continue
+            out = pd.DataFrame(index=df.index)
+            out["product_id"] = df[product_col].astype(str).str.strip()
+            raw = df[prescription_col].astype(str).map(norm_key)
+            out["prescription"] = raw.isin(
+                {"1", "true", "yes", "co", "x", "dung", "thuoc ke don"}
+            ) | raw.str.startswith("thuoc ke don")
+            out["ingredient"] = (
+                df[ingredient_col].astype(str).str.strip() if ingredient_col else ""
+            )
+            frames.append(out)
+        if not frames:
+            return pd.DataFrame(columns=["product_id", "prescription", "ingredient"])
+        return pd.concat(frames, ignore_index=True).drop_duplicates(
+            subset=["product_id"]
+        )
+
+    @classmethod
+    def _build_customers(cls, tables, profiles, roles) -> pd.DataFrame:
+        frames = []
+        for table in tables:
+            if roles[id(table)] != "customers":
+                continue
+            cols = profiles[id(table)].roles
+            df = table.df
+            id_col = cols.get("customer_id")
+            name_col = None
+            for candidate in df.columns:
+                key = norm_key(candidate)
+                if key in {"ten", "ten khach", "ten khach hang", "ten goi", "ho ten"}:
+                    name_col = candidate
+                    break
+            if not name_col:
+                name_col = cols.get("customer")
+            if not id_col and not name_col:
+                continue
+            out = pd.DataFrame(index=df.index)
+            out["customer_id"] = df[id_col].astype(str).str.strip() if id_col else ""
+            out["name"] = df[name_col].astype(str).str.strip() if name_col else ""
+            group_col = None
+            for candidate in df.columns:
+                key = norm_key(candidate)
+                if (
+                    "nhom khach" in key
+                    or "loai khach" in key
+                    or "loai hinh khach" in key
+                ):
+                    group_col = candidate
+                    break
+            out["group"] = df[group_col].astype(str).str.strip() if group_col else ""
+            frames.append(out)
+        if not frames:
+            return pd.DataFrame(columns=["customer_id", "name", "group"])
+        return pd.concat(frames, ignore_index=True)
+
+    # ------------------------------------------------------------------ orders
+    @classmethod
+    def _build_orders(cls, order_tables, line_tables, profiles) -> pd.DataFrame:
+        frames = []
+        for table in order_tables:
+            cols = profiles[id(table)].roles
+            df = table.df.drop_duplicates()
+            oid = cols.get("order_id")
+            dt = cols.get("date")
+            if not dt:
+                continue
+            out = pd.DataFrame(index=df.index)
+            if oid:
+                out["order_id"] = df[oid].astype(str).str.strip()
+            else:
+                if not (cols.get("amount") or cols.get("total") or cols.get("price")):
+                    continue
+                prefix = f"{table.name}:{table.sheet or ''}"
+                out["order_id"] = [f"{prefix}:{i}" for i in df.index]
+            out["date"] = _to_date_with_sheet(df[dt], table)
+            time_col = None
+            for candidate in df.columns:
+                key = norm_key(candidate)
+                if ("thoi gian tao" in key or "gio" in key or "created" in key) and (
+                    df[candidate].astype(str).str.contains(":").any()
+                ):
+                    time_col = candidate
+                    break
+            out["hour"] = df[time_col].map(parse_hour) if time_col else -1
+            out["channel"] = (
+                df[cols["channel"]].astype(str).str.strip()
+                if cols.get("channel")
+                else ""
+            )
+            out["status_raw"] = (
+                df[cols["status"]].astype(str) if cols.get("status") else ""
+            )
+            out["status"] = out["status_raw"].map(normalize_status)
+            amount_col = cols.get("amount") or cols.get("total") or cols.get("price")
+            out["revenue"] = _to_num(df[amount_col]) if amount_col else 0.0
+            out["customer"] = (
+                df[cols["customer"]].astype(str).str.strip()
+                if cols.get("customer")
+                else ""
+            )
+            out["customer_id"] = (
+                df[cols["customer_id"]].astype(str).str.strip()
+                if cols.get("customer_id")
+                else ""
+            )
+            out["employee"] = (
+                df[cols["employee"]].astype(str).str.strip()
+                if cols.get("employee")
+                else ""
+            )
+            out["employee_id"] = (
+                df[cols["employee_id"]].astype(str).str.strip()
+                if cols.get("employee_id")
+                else ""
+            )
+            if cols.get("debt"):
+                out["debt"] = _to_num(df[cols["debt"]]).clip(lower=0)
+            elif cols.get("total") and cols.get("paid"):
+                out["debt"] = (
+                    _to_num(df[cols["total"]]) - _to_num(df[cols["paid"]])
+                ).clip(lower=0)
+            else:
+                out["debt"] = (
+                    _to_num(df[cols["debt"]]).clip(lower=0) if cols.get("debt") else 0.0
+                )
+            out["paid"] = _to_num(df[cols["paid"]]) if cols.get("paid") else 0.0
+            out["discount"] = (
+                _to_num(df[cols["discount"]]) if cols.get("discount") else 0.0
+            )
+            out["payment"] = (
+                df[cols["payment"]].astype(str).str.strip()
+                if cols.get("payment")
+                else ""
+            )
+            out["service"] = (
+                df[cols["product"]].astype(str).str.strip()
+                if cols.get("product")
+                else ""
+            )
+            frames.append(out)
+
+        if frames:
+            orders = pd.concat(frames, ignore_index=True)
+            orders = orders.dropna(subset=["date"])
+            orders = orders[orders["order_id"] != ""]
+            agg = {
+                "date": "min",
+                "status": _status_priority,
+                "status_raw": "first",
+                "revenue": "sum",
+                "customer": "first",
+                "customer_id": "first",
+                "employee": "first",
+                "employee_id": "first",
+                "hour": "min",
+                "channel": "first",
+                "debt": "max",
+                "paid": "max",
+                "discount": "max",
+                "payment": "first",
+                "service": "first",
+            }
+            orders = orders.groupby("order_id", as_index=False).agg(agg)
+            return orders
+
+        # No order table: derive from every line table, then aggregate.
+        derived = []
+        seen_orders: set = set()
+        for table in line_tables:
+            cols = profiles[id(table)].roles
+            oid, dt = cols.get("order_id"), cols.get("date")
+            if not dt:
+                continue
+            if not oid and not cols.get("amount"):
+                continue
+            df = _drop_footer_rows(table.df, cols)
+            df = _drop_invalid_lines(df, cols)
+            df = _drop_complete_duplicates(df, oid)
+            # Excel merged cells leave order-level fields blank on extra lines.
+            fill_cols = [
+                cols.get(role)
+                for role in (
+                    "order_id",
+                    "number",
+                    "date",
+                    "status",
+                    "customer",
+                    "customer_id",
+                    "employee",
+                    "employee_id",
+                    "channel",
+                    "payment",
+                    "debt",
+                    "paid",
+                    "discount",
+                )
+                if cols.get(role)
+            ]
+            if fill_cols:
+                df = df.copy()
+                block = df[fill_cols].replace(r"^\s*$", pd.NA, regex=True)
+                df[fill_cols] = block.ffill()
+            out = pd.DataFrame(index=df.index)
+            if oid:
+                out["order_id"] = df[oid].astype(str).str.strip()
+            elif cols.get("number"):
+                prefix = f"{table.name}:{table.sheet or ''}"
+                out["order_id"] = [
+                    f"{prefix}:{value}"
+                    for value in df[cols["number"]].astype(str).str.strip()
+                ]
+            else:
+                prefix = f"{table.name}:{table.sheet or ''}"
+                out["order_id"] = [f"{prefix}:{i}" for i in df.index]
+            out["date"] = _to_date_with_sheet(df[dt], table)
+            time_col = None
+            for candidate in df.columns:
+                key = norm_key(candidate)
+                if ("thoi gian tao" in key or "gio" in key or "created" in key) and (
+                    df[candidate].astype(str).str.contains(":").any()
+                ):
+                    time_col = candidate
+                    break
+            out["hour"] = df[time_col].map(parse_hour) if time_col else -1
+            out["channel"] = (
+                df[cols["channel"]].astype(str).str.strip()
+                if cols.get("channel")
+                else ""
+            )
+            if cols.get("status"):
+                out["status_raw"] = df[cols["status"]].astype(str)
+                out["status"] = out["status_raw"].map(normalize_status)
+            else:
+                out["status_raw"] = ""
+                out["status"] = "completed"
+            amount = cols.get("amount") or cols.get("total") or cols.get("price")
+            out["revenue"] = _to_num(df[amount]) if amount else 0.0
+            out["customer"] = (
+                df[cols["customer"]].astype(str) if cols.get("customer") else ""
+            )
+            out["customer_id"] = ""
+            out["employee"] = (
+                df[cols["employee"]].astype(str).str.strip()
+                if cols.get("employee")
+                else ""
+            )
+            out["employee_id"] = (
+                df[cols["employee_id"]].astype(str).str.strip()
+                if cols.get("employee_id")
+                else ""
+            )
+            out["debt"] = (
+                _to_num(df[cols["debt"]]).clip(lower=0) if cols.get("debt") else 0.0
+            )
+            out["paid"] = _to_num(df[cols["paid"]]) if cols.get("paid") else 0.0
+            out["discount"] = (
+                _to_num(df[cols["discount"]]) if cols.get("discount") else 0.0
+            )
+            out["payment"] = (
+                df[cols["payment"]].astype(str).str.strip()
+                if cols.get("payment")
+                else ""
+            )
+            out["service"] = (
+                df[cols["product"]].astype(str).str.strip()
+                if cols.get("product")
+                else ""
+            )
+            out["_key_product"] = (
+                df[cols["product"]].astype(str).str.strip()
+                if cols.get("product")
+                else ""
+            )
+            out["_key_quantity"] = (
+                _to_num(df[cols["quantity"]]) if cols.get("quantity") else 1.0
+            )
+            out = _drop_seen(
+                out,
+                seen_orders,
+                ["order_id", "date", "revenue", "_key_product", "_key_quantity"],
+            )
+            derived.append(out)
+        if derived:
+            orders = pd.concat(derived, ignore_index=True)
+            orders = orders.dropna(subset=["date"])
+            orders = orders[orders["order_id"] != ""]
+            orders = orders.drop(
+                columns=["_key_product", "_key_quantity"], errors="ignore"
+            )
+            return orders.groupby("order_id", as_index=False).agg(
+                {
+                    "date": "min",
+                    "status": "first",
+                    "status_raw": "first",
+                    "revenue": "sum",
+                    "customer": "first",
+                    "customer_id": "first",
+                    "employee": "first",
+                    "employee_id": "first",
+                    "hour": "min",
+                    "channel": "first",
+                    "debt": "max",
+                    "paid": "max",
+                    "discount": "max",
+                    "payment": "first",
+                    "service": "first",
+                }
+            )
+        return pd.DataFrame(
+            columns=[
+                "order_id",
+                "date",
+                "status",
+                "status_raw",
+                "revenue",
+                "customer",
+                "customer_id",
+                "employee",
+                "employee_id",
+                "debt",
+                "paid",
+                "discount",
+                "payment",
+                "service",
+            ]
+        )
+
+    # -------------------------------------------------------------- conversions
+    @classmethod
+    def _build_conversions(cls, tables, profiles) -> tuple[dict, dict, dict]:
+        """Map (product, pack unit) to a base-unit factor."""
+        factors: dict[tuple[str, str], float] = {}
+        base_units: dict[str, str] = {}
+        units_by_product: dict[str, set[str]] = {}
+        for table in tables:
+            cols = profiles[id(table)].roles
+            df = table.df
+            product_col = cols.get("product")
+            id_col = cols.get("product_id")
+            pack_col = cols.get("pack_unit") or (
+                cols.get("unit") if cols.get("factor") else None
+            )
+            factor_col = cols.get("factor")
+            base_col = cols.get("base_unit")
+            if not product_col:
+                for candidate in df.columns:
+                    key = norm_key(candidate)
+                    if key in {"ten san pham", "ten hang", "hang", "ten hang hoa"}:
+                        product_col = candidate
+                        break
+            if not id_col:
+                for candidate in df.columns:
+                    key = norm_key(candidate)
+                    if key in {
+                        "ma hang hoa",
+                        "ma hang",
+                        "ma san pham",
+                        "ma sku",
+                        "sku",
+                    }:
+                        id_col = candidate
+                        break
+            if not pack_col:
+                for candidate in df.columns:
+                    key = norm_key(candidate)
+                    if "don vi quy doi" in key or key in {"dv lon", "don vi lon"}:
+                        pack_col = candidate
+                        break
+            if not factor_col:
+                for candidate in df.columns:
+                    key = norm_key(candidate)
+                    if "ti le" in key or "he so" in key:
+                        factor_col = candidate
+                        break
+            if not base_col:
+                for candidate in df.columns:
+                    key = norm_key(candidate)
+                    if "don vi co ban" in key or key in {"dv nho", "don vi nho"}:
+                        base_col = candidate
+                        break
+            if not ((product_col or id_col) and pack_col and factor_col):
+                continue
+            for _, row in df.iterrows():
+                product_key = norm_key(row[product_col]) if product_col else ""
+                id_key = f"#{norm_key(row[id_col])}" if id_col else ""
+                unit_key = norm_key(row[pack_col])
+                factor = parse_number(row[factor_col])
+                if not unit_key or not factor or factor <= 0:
+                    continue
+                keys = [key for key in (product_key, id_key) if key]
+                if not keys:
+                    continue
+                for key in keys:
+                    factors[(key, unit_key)] = float(factor)
+                    units_by_product.setdefault(key, set()).add(unit_key)
+                    if base_col:
+                        base_key = norm_key(row[base_col])
+                        if base_key:
+                            base_units[key] = base_key
+        return factors, base_units, units_by_product
+
+    # ------------------------------------------------------------------- lines
+    @classmethod
+    def _build_lines(
+        cls,
+        line_tables,
+        orders: pd.DataFrame,
+        profiles,
+        conversions: tuple[dict, dict, dict] | None = None,
+    ) -> pd.DataFrame:
+        factors, base_units, units_by_product = conversions or ({}, {}, {})
+        frames = []
+        seen_rows: set = set()
+        for table in line_tables:
+            cols = profiles[id(table)].roles
+            oid = cols.get("order_id")
+            df = _drop_footer_rows(table.df, cols)
+            df = _drop_invalid_lines(df, cols)
+            df = _drop_complete_duplicates(df, oid)
+            # Excel merged cells leave order-level fields blank on extra lines.
+            fill_cols = [
+                cols.get(role)
+                for role in (
+                    "order_id",
+                    "number",
+                    "date",
+                    "status",
+                    "customer",
+                    "customer_id",
+                    "employee",
+                    "employee_id",
+                    "channel",
+                    "payment",
+                    "debt",
+                    "paid",
+                    "discount",
+                )
+                if cols.get(role)
+            ]
+            if fill_cols:
+                df = df.copy()
+                block = df[fill_cols].replace(r"^\s*$", pd.NA, regex=True)
+                df[fill_cols] = block.ffill()
+            if not oid and not (cols.get("date") and cols.get("amount")):
+                continue
+            out = pd.DataFrame(index=df.index)
+            if oid:
+                out["order_id"] = df[oid].astype(str).str.strip()
+            elif cols.get("number"):
+                prefix = f"{table.name}:{table.sheet or ''}"
+                out["order_id"] = [
+                    f"{prefix}:{value}"
+                    for value in df[cols["number"]].astype(str).str.strip()
+                ]
+            else:
+                prefix = f"{table.name}:{table.sheet or ''}"
+                out["order_id"] = [f"{prefix}:{i}" for i in df.index]
+            out["product"] = (
+                df[cols["product"]].astype(str).str.strip()
+                if cols.get("product")
+                else ""
+            )
+            out["product_id"] = (
+                df[cols["product_id"]].astype(str).str.strip()
+                if cols.get("product_id")
+                else ""
+            )
+            out["quantity"] = (
+                _to_num(df[cols["quantity"]]) if cols.get("quantity") else 1.0
+            )
+            out["unit"] = (
+                df[cols["unit"]].astype(str).str.strip() if cols.get("unit") else ""
+            )
+            if cols.get("base_quantity"):
+                out["base_quantity"] = _to_num(df[cols["base_quantity"]])
+            elif factors:
+                raw_quantity = (
+                    df[cols["quantity"]]
+                    if cols.get("quantity")
+                    else pd.Series(1.0, index=df.index)
+                )
+                multipliers = []
+                for position in range(len(df)):
+                    product_key = norm_key(out["product"].iloc[position])
+                    id_value = (
+                        str(out["product_id"].iloc[position])
+                        if "product_id" in out.columns
+                        else ""
+                    )
+                    id_key = f"#{norm_key(id_value)}" if id_value else ""
+                    product_keys = [key for key in (product_key, id_key) if key]
+                    unit_key = norm_key(out["unit"].iloc[position])
+                    factor = None
+                    if unit_key:
+                        for key in product_keys:
+                            factor = factors.get((key, unit_key))
+                            if factor is not None:
+                                break
+                        if factor is None:
+                            for key in product_keys:
+                                for known in units_by_product.get(key, ()):
+                                    if re.search(
+                                        rf"(?<![a-z0-9]){re.escape(known)}(?![a-z0-9])",
+                                        unit_key,
+                                    ):
+                                        factor = factors.get((key, known))
+                                        break
+                                if factor is not None:
+                                    break
+                    if factor is None:
+                        quantity_key = norm_key(raw_quantity.iloc[position])
+                        for key in product_keys:
+                            for known in units_by_product.get(key, ()):
+                                if re.search(
+                                    rf"(?<![a-z0-9]){re.escape(known)}(?![a-z0-9])",
+                                    quantity_key,
+                                ):
+                                    factor = factors.get((key, known))
+                                    break
+                            if factor is not None:
+                                break
+                    multipliers.append(factor if factor else 1.0)
+                out["base_quantity"] = out["quantity"] * pd.Series(
+                    multipliers, index=df.index
+                )
+            else:
+                out["base_quantity"] = out["quantity"]
+            out["unit_price"] = _to_num(df[cols["price"]]) if cols.get("price") else 0.0
+            amount_col = cols.get("amount") or cols.get("total")
+            out["line_amount"] = (
+                _to_num(df[amount_col])
+                if amount_col
+                else out["quantity"] * out["unit_price"]
+            )
+            out["cost"] = _to_num(df[cols["cost"]]) if cols.get("cost") else 0.0
+            out["category"] = (
+                df[cols["category"]].astype(str).str.strip()
+                if cols.get("category")
+                else ""
+            )
+            out = _drop_seen(
+                out,
+                seen_rows,
+                [
+                    "order_id",
+                    "product",
+                    "quantity",
+                    "base_quantity",
+                    "unit",
+                    "unit_price",
+                    "line_amount",
+                ],
+            )
+            frames.append(out)
+        if not frames:
+            return pd.DataFrame(
+                columns=[
+                    "order_id",
+                    "product",
+                    "product_id",
+                    "quantity",
+                    "base_quantity",
+                    "unit",
+                    "unit_price",
+                    "line_amount",
+                    "cost",
+                    "category",
+                ]
+            )
+        lines = pd.concat(frames, ignore_index=True)
+        if not orders.empty:
+            meta_cols = ["order_id", "date", "status"]
+            for extra in ("hour", "channel"):
+                if extra in orders.columns:
+                    meta_cols.append(extra)
+            meta = orders[meta_cols]
+            lines = lines.merge(meta, on="order_id", how="left")
+        else:
+            lines["date"] = pd.NaT
+            lines["status"] = "completed"
+        return lines
+
+    # ---------------------------------------------------------------- products
+    @classmethod
+    def _build_products(
+        cls, product_tables, lines: pd.DataFrame, profiles
+    ) -> pd.DataFrame:
+        frames = []
+        for table in product_tables:
+            cols = profiles[id(table)].roles
+            df = table.df
+            name_col = cols.get("product")
+            if not name_col or name_col == cols.get("product_id"):
+                # Generic exports call the name column "ten_goi" or "ten".
+                for candidate in df.columns:
+                    key = norm_key(candidate)
+                    if key.startswith("ten") or key == "name":
+                        name_col = candidate
+                        break
+            if not name_col:
+                name_col = cols.get("product_id")
+            if not name_col:
+                continue
+            out = pd.DataFrame(index=df.index)
+            out["product_id"] = (
+                df[cols["product_id"]].astype(str).str.strip()
+                if cols.get("product_id")
+                else ""
+            )
+            out["product"] = df[name_col].astype(str).str.strip()
+            out["price"] = _to_num(df[cols["price"]]) if cols.get("price") else 0.0
+            out["cost"] = _to_num(df[cols["cost"]]) if cols.get("cost") else 0.0
+            out["unit"] = (
+                df[cols["unit"]].astype(str).str.strip() if cols.get("unit") else ""
+            )
+            out["category"] = (
+                df[cols["category"]].astype(str).str.strip()
+                if cols.get("category")
+                else ""
+            )
+            frames.append(out)
+        if frames:
+            products = pd.concat(frames, ignore_index=True)
+            # Tables with only a product id add no name; drop those rows when a
+            # named row for the same id exists.
+            named_ids = set(
+                products.loc[
+                    products["product"].astype(str).str.strip()
+                    != products["product_id"].astype(str).str.strip(),
+                    "product_id",
+                ]
+            )
+            if named_ids:
+                keep = ~(
+                    (
+                        products["product"].astype(str).str.strip()
+                        == products["product_id"].astype(str).str.strip()
+                    )
+                    & products["product_id"].isin(named_ids)
+                )
+                products = products[keep]
+            return products.drop_duplicates(subset=["product"])
+        if not lines.empty:
+            return lines[["product", "product_id", "unit", "category"]].drop_duplicates(
+                subset=["product"]
+            )
+        return pd.DataFrame(
+            columns=["product", "product_id", "price", "cost", "unit", "category"]
+        )
+
+    # --------------------------------------------------------------- purchases
+    @classmethod
+    def _build_purchases(cls, purchase_tables, profiles):
+        purchase_frames, line_frames = [], []
+        for table in purchase_tables:
+            cols = profiles[id(table)].roles
+            df = table.df
+            purchase_id = cols.get("purchase_id") or cols.get("order_id")
+            product_col = cols.get("product") or cols.get("product_id")
+            if purchase_id and product_col:
+                out = pd.DataFrame(index=df.index)
+                out["purchase_id"] = df[purchase_id].astype(str).str.strip()
+                out["product"] = df[product_col].astype(str).str.strip()
+                out["product_id"] = (
+                    df[cols["product_id"]].astype(str).str.strip()
+                    if cols.get("product_id")
+                    else ""
+                )
+                out["quantity"] = (
+                    _to_num(df[cols["quantity"]]) if cols.get("quantity") else 1.0
+                )
+                out["unit_price"] = (
+                    _to_num(df[cols["price"]]) if cols.get("price") else 0.0
+                )
+                out["amount"] = (
+                    _to_num(df[cols["amount"]])
+                    if cols.get("amount")
+                    else out["quantity"] * out["unit_price"]
+                )
+                out["supplier"] = (
+                    df[cols["supplier"]].astype(str).str.strip()
+                    if cols.get("supplier")
+                    else ""
+                )
+                out["unit"] = (
+                    df[cols["unit"]].astype(str).str.strip() if cols.get("unit") else ""
+                )
+                out["date"] = (
+                    _to_date(df[cols["date"]])
+                    if cols.get("date") and "han" not in norm_key(cols["date"])
+                    else pd.NaT
+                )
+                line_frames.append(out)
+            elif purchase_id:
+                out = pd.DataFrame(index=df.index)
+                out["purchase_id"] = df[purchase_id].astype(str).str.strip()
+                out["date"] = _to_date(df[cols["date"]]) if cols.get("date") else pd.NaT
+                supplier_col = cols.get("supplier") or cols.get("supplier_id")
+                out["supplier"] = (
+                    df[supplier_col].astype(str).str.strip() if supplier_col else ""
+                )
+                amount_col = cols.get("amount") or cols.get("total")
+                out["amount"] = _to_num(df[amount_col]) if amount_col else 0.0
+                out["status"] = (
+                    df[cols["status"]].map(normalize_status)
+                    if cols.get("status")
+                    else "completed"
+                )
+                purchase_frames.append(out)
+        purchases = (
+            pd.concat(purchase_frames, ignore_index=True)
+            if purchase_frames
+            else pd.DataFrame(
+                columns=["purchase_id", "date", "supplier", "amount", "status"]
+            )
+        )
+        lines = (
+            pd.concat(line_frames, ignore_index=True)
+            if line_frames
+            else pd.DataFrame(
+                columns=[
+                    "purchase_id",
+                    "product",
+                    "quantity",
+                    "unit_price",
+                    "amount",
+                    "unit",
+                    "product_id",
+                ]
+            )
+        )
+        if not lines.empty and not purchases.empty:
+            header = purchases.drop_duplicates(subset=["purchase_id"])
+            if "date" in header.columns:
+                date_map = header.set_index("purchase_id")["date"]
+                header_date = lines["purchase_id"].map(date_map)
+                if "date" in lines.columns:
+                    lines["date"] = lines["date"].where(
+                        lines["date"].notna(), header_date
+                    )
+                else:
+                    lines["date"] = header_date
+                lines["date"] = lines["date"].map(_plain_date)
+            if "supplier" in header.columns:
+                supplier_map = header.set_index("purchase_id")["supplier"]
+                header_supplier = lines["purchase_id"].map(supplier_map)
+                if "supplier" not in lines.columns:
+                    lines["supplier"] = ""
+                lines["supplier"] = lines["supplier"].where(
+                    lines["supplier"].astype(str).str.strip() != "",
+                    header_supplier.fillna(""),
+                )
+        return purchases, lines
+
+    # ------------------------------------------------------------------ inventory
+    @classmethod
+    def _build_inventory(cls, tables, profiles, roles) -> pd.DataFrame:
+        inventory_tables = [t for t in tables if roles[id(t)] == "inventory"]
+        if not inventory_tables:
+            inventory_tables = [
+                t
+                for t in tables
+                if roles[id(t)] == "products"
+                and any(
+                    column in t.df.columns
+                    for column in (
+                        "ton_cuoi_ky",
+                        "ton_cuoi",
+                        "ton",
+                        "so_luong_ton",
+                        "ton_kho",
+                    )
+                )
+            ]
+        frames = []
+        for table in inventory_tables:
+            cols = profiles[id(table)].roles
+            product_col = cols.get("product") or cols.get("product_id")
+            if not product_col:
+                continue
+            qty_col = None
+            for candidate in (
+                "ton_cuoi_ky",
+                "ton_cuoi",
+                "ton",
+                "so_luong_ton",
+                "ton_kho",
+            ):
+                if candidate in table.df.columns:
+                    qty_col = candidate
+                    break
+            if qty_col is None and cols.get("number"):
+                qty_col = cols["number"]
+            if qty_col is None:
+                continue
+            out = pd.DataFrame(index=table.df.index)
+            out["product"] = table.df[product_col].astype(str).str.strip()
+            out["product_id"] = (
+                table.df[cols["product_id"]].astype(str).str.strip()
+                if cols.get("product_id")
+                else ""
+            )
+            out["unit"] = (
+                table.df[cols["unit"]].astype(str).str.strip()
+                if cols.get("unit")
+                else ""
+            )
+            out["quantity"] = _to_num(table.df[qty_col])
+            frames.append(out)
+        if not frames:
+            return pd.DataFrame(columns=["product", "product_id", "unit", "quantity"])
+        inventory = pd.concat(frames, ignore_index=True)
+        return inventory.drop_duplicates(subset=["product", "unit"], keep="last")
+
+    def stock(self, product: str | None = None) -> float | None:
+        """Closing stock of one product in base units (inventory snapshot)."""
+        if self.inventory is None or self.inventory.empty or not product:
+            return None
+        key = norm_key(product)
+        rows = self.inventory[self.inventory["product"].map(norm_key) == key]
+        if rows.empty:
+            matches = [
+                name
+                for name in self.inventory["product"].unique()
+                if key in norm_key(name)
+            ]
+            if matches:
+                best = max(matches, key=lambda name: len(norm_key(name)))
+                rows = self.inventory[self.inventory["product"] == best]
+        if rows.empty:
+            return None
+        return float(rows["quantity"].sum())
+
+    def inventory_value(self) -> float | None:
+        """Stock value at cost per base unit (rulebook §5)."""
+        if self.inventory is None or self.inventory.empty or self.products.empty:
+            return None
+        costs = {
+            norm_key(product): float(cost)
+            for product, cost in zip(self.products["product"], self.products["cost"])
+            if cost and float(cost) > 0
+        }
+        total = 0.0
+        matched = 0
+        for _, row in self.inventory.iterrows():
+            cost = costs.get(norm_key(row["product"]))
+            if cost:
+                total += float(row["quantity"]) * cost
+                matched += 1
+        return total if matched else None
+
+    def unsold_count(self, period: Period | None = None) -> int:
+        """Products sold before the period but not during it (rulebook §5)."""
+        if period is None or self.lines.empty or "date" not in self.lines.columns:
+            return 0
+        valid = self.lines[~self.lines["status"].isin(["cancelled", "returned"])]
+        before = valid[
+            valid["date"].apply(lambda d: isinstance(d, date) and d < period.start)
+        ]
+        during = valid[valid["date"].apply(period.contains)]
+        return len(set(before["product"]) - set(during["product"]))
+
+    def products_in_orders(self, period: Period | None, min_orders: int) -> int:
+        """Products appearing in at least N distinct orders (rulebook §3)."""
+        if period is None or min_orders <= 0:
+            return 0
+        df = self.filtered_lines(period)
+        if df.empty:
+            return 0
+        df = df.assign(_key=df["product"].map(norm_key))
+        df = df[df["_key"] != "phi phuc vu"]
+        counts = df.groupby("_key")["order_id"].nunique()
+        return int((counts >= min_orders).sum())
+
+    # ----------------------------------------------------------------- metrics
+    def valid_orders(
+        self, period: Period | None = None, include_returned: bool = False
+    ) -> pd.DataFrame:
+        df = self.orders
+        if df.empty or "status" not in df.columns:
+            return df
+        mask = df["status"].isin({"completed", "shipping", "other", "unknown"})
+        if include_returned:
+            mask = ~df["status"].isin({"cancelled"})
+        if period is not None:
+            mask &= df["date"].apply(period.contains)
+        return df[mask]
+
+    def filtered_orders(
+        self,
+        period: Period | None = None,
+        customer: str | None = None,
+        employee: str | None = None,
+    ) -> pd.DataFrame:
+        df = self.valid_orders(period)
+        if customer:
+            key = norm_key(customer)
+            df = df[df["customer"].map(norm_key) == key]
+        if employee:
+            key = norm_key(employee)
+            df = df[df["employee"].map(norm_key) == key]
+        return df
+
+    def revenue_shift(self, period: Period | None, shift: str) -> float | None:
+        df = self.valid_orders(period)
+        if df.empty or "hour" not in df.columns:
+            return None
+        hour = df["hour"]
+        if shift == "morning":
+            df = df[(hour >= 6) & (hour < 14)]
+        elif shift == "afternoon":
+            df = df[(hour >= 14) & (hour < 22)]
+        else:
+            return None
+        return float(df["revenue"].sum())
+
+    def orders_shift(self, period: Period | None, shift: str) -> int | None:
+        df = self.valid_orders(period)
+        if df.empty or "hour" not in df.columns:
+            return None
+        hour = df["hour"]
+        if shift == "morning":
+            df = df[(hour >= 6) & (hour < 14)]
+        elif shift == "afternoon":
+            df = df[(hour >= 14) & (hour < 22)]
+        else:
+            return None
+        return int(len(df))
+
+    def revenue_channel(self, period: Period | None, keyword: str) -> float | None:
+        df = self.valid_orders(period)
+        if df.empty or "channel" not in df.columns:
+            return None
+        if df["channel"].astype(str).str.strip().eq("").all():
+            return None
+        key = norm_key(keyword)
+        df = df[df["channel"].map(norm_key).str.contains(key, na=False)]
+        return float(df["revenue"].sum())
+
+    def channel_share(self, period: Period | None, keyword: str) -> float | None:
+        total = self.revenue(period)
+        if total <= 0:
+            return None
+        part = self.revenue_channel(period, keyword)
+        if part is None:
+            return None
+        return round(100.0 * part / total, 2)
+
+    def revenue_employee(self, period: Period | None, employee: str) -> float | None:
+        df = self.valid_orders(period)
+        if df.empty:
+            return None
+        key = norm_key(employee)
+        mask = df["employee_id"].map(norm_key).eq(key) | df["employee"].map(
+            norm_key
+        ).eq(key)
+        if not mask.any():
+            mask = df["employee"].map(norm_key).str.contains(key, na=False) | df[
+                "employee_id"
+            ].map(norm_key).str.contains(key, na=False)
+        if not mask.any() and key.split():
+            # Shop ledgers often shorten names to the last word ("A.Phúc").
+            last = key.split()[-1]
+            tokens = df["employee"].map(norm_key).str.split().str[-1]
+            mask = tokens.eq(last)
+        if not mask.any():
+            return None
+        return float(df[mask]["revenue"].sum())
+
+    def top_employee(self, period: Period | None = None) -> str | None:
+        df = self.valid_orders(period)
+        if df.empty:
+            return None
+        name = df["employee"].astype(str).str.strip()
+        name = name.where(name != "", df["employee_id"].astype(str).str.strip())
+        df = df[name != ""]
+        if df.empty:
+            return None
+        grouped = df.groupby(name)["revenue"].sum().sort_values(ascending=False)
+        return str(grouped.index[0])
+
+    def match_employee(self, question: str) -> str | None:
+        if self.employees is None or self.employees.empty:
+            return None
+        q = norm_key(question)
+        best: str | None = None
+        best_len = 0
+        for name in self.employees["employee"].dropna().unique():
+            key = norm_key(name)
+            if len(key) >= 4 and key in q and len(key) > best_len:
+                best, best_len = str(name), len(key)
+        return best
+
+    def commission_rate(self, employee: str) -> float | None:
+        if self.employees is None or self.employees.empty:
+            return None
+        key = norm_key(employee)
+        rows = self.employees[self.employees["employee"].map(norm_key) == key]
+        if rows.empty and key.split():
+            last = key.split()[-1]
+            rows = self.employees[
+                self.employees["employee"].map(norm_key).str.split().str[-1] == last
+            ]
+        if rows.empty:
+            return None
+        return float(rows["rate"].iloc[0])
+
+    def commission(self, period: Period | None, employee: str) -> float | None:
+        rate = self.commission_rate(employee)
+        if rate is None:
+            return None
+        revenue = self.revenue_employee(period, employee)
+        if revenue is None:
+            return None
+        return round(revenue * rate / 100.0)
+
+    def commission_by_employee(
+        self, period: Period | None = None
+    ) -> list[tuple[str, float]]:
+        if self.employees is None or self.employees.empty:
+            return []
+        df = self.valid_orders(period)
+        if df.empty:
+            return []
+        name = df["employee"].astype(str).str.strip()
+        df = df[name != ""]
+        if df.empty:
+            return []
+        tokens = name[name != ""].map(
+            lambda value: norm_key(value).split()[-1] if norm_key(value) else ""
+        )
+        grouped = df.assign(_token=tokens).groupby("_token")["revenue"].sum()
+        result = []
+        for token, revenue in grouped.items():
+            if not token:
+                continue
+            rows = self.employees[
+                self.employees["employee"].map(norm_key).str.split().str[-1] == token
+            ]
+            if rows.empty:
+                continue
+            employee = str(rows["employee"].iloc[0])
+            rate = float(rows["rate"].iloc[0])
+            result.append((employee, float(revenue) * rate / 100.0))
+        return sorted(result, key=lambda item: item[1], reverse=True)
+
+    def filtered_lines(
+        self,
+        period: Period | None = None,
+        product: str | None = None,
+        category: str | None = None,
+    ) -> pd.DataFrame:
+        df = self.lines
+        if df.empty or "date" not in df.columns:
+            return df
+        if period is not None and df["date"].notna().any():
+            df = df[df["date"].apply(period.contains)]
+        df = df[~df["status"].isin(["cancelled", "returned"])]
+        if product:
+            key = norm_key(product)
+            keys = df["product"].map(norm_key)
+            exact = df[keys == key]
+            if exact.empty and key:
+                # Partial product names: keep the longest contained match.
+                matches = [
+                    name
+                    for name in df["product"].dropna().unique()
+                    if key in norm_key(name)
+                ]
+                if matches:
+                    best = max(matches, key=lambda name: len(norm_key(name)))
+                    exact = df[df["product"] == best]
+            df = exact
+        if category:
+            key = norm_key(category)
+            df = df[df["category"].map(norm_key) == key]
+        return df
+
+    def product_quantity(
+        self, period: Period | None = None, product: str | None = None
+    ) -> float | None:
+        """Units sold of one product, in base units."""
+        if not product:
+            return None
+        df = self.filtered_lines(period, product=product)
+        if df.empty:
+            return None
+        metric = "base_quantity" if "base_quantity" in df.columns else "quantity"
+        return float(df[metric].sum())
+
+    def price_on_date(self, product: str, day: date) -> float | None:
+        """Unit price per base unit on one day (rulebook §5)."""
+        if self.lines.empty or "date" not in self.lines.columns:
+            return None
+        key = norm_key(product)
+        df = self.lines[self.lines["date"] == day]
+        df = df[df["product"].map(norm_key) == key]
+        if df.empty:
+            return None
+        prices = []
+        for _, row in df.iterrows():
+            unit_price = row.get("unit_price") or 0
+            if unit_price > 0:
+                prices.append(round(unit_price))
+        if not prices:
+            return None
+        # Prices on one day are normally identical; pick the most common value.
+        return float(pd.Series(prices).mode().iat[0])
+
+    def quantity_by_unit(
+        self,
+        period: Period | None = None,
+        unit: str | None = None,
+        size: str | None = None,
+    ) -> float | None:
+        """Units sold for products whose base unit is `unit` (rulebook §3)."""
+        if not unit:
+            return None
+        df = self.filtered_lines(period)
+        if df.empty:
+            return None
+        wanted = norm_key(unit)
+        if size:
+            # Size is encoded in the product name ("Cà phê sữa (L)"); unit
+            # masters often omit drink products, so the name suffix wins.
+            suffix = norm_key(size)
+            df = df[df["product"].map(lambda name: norm_key(name).endswith(suffix))]
+        else:
+            master_units: dict[str, str] = {}
+            if not self.products.empty and "unit" in self.products.columns:
+                for name, unit in zip(self.products["product"], self.products["unit"]):
+                    key = norm_key(name)
+                    if key and key not in master_units:
+                        master_units[key] = unit
+            master_key = df["product"].map(
+                lambda name: norm_key(master_units.get(norm_key(name), ""))
+            )
+            line_key = df["unit"].map(norm_key)
+            # Prefer the catalog base unit; fall back to the line unit when the
+            # catalog has no exact name (common with case/spacing variants).
+            effective = master_key.where(master_key != "", line_key)
+            df = df[effective == wanted]
+        if df.empty:
+            return None
+        metric = "base_quantity" if "base_quantity" in df.columns else "quantity"
+        return float(df[metric].sum())
+
+    def date_range(self) -> tuple[date, date] | None:
+        dates: list[date] = []
+        if not self.orders.empty and "date" in self.orders.columns:
+            dates.extend(
+                value for value in self.orders["date"] if isinstance(value, date)
+            )
+        if not self.lines.empty and "date" in self.lines.columns:
+            dates.extend(
+                value for value in self.lines["date"] if isinstance(value, date)
+            )
+        if not dates:
+            return None
+        return min(dates), max(dates)
+
+    def revenue_last_year(self, period: Period) -> float:
+        def shift(value: date) -> date:
+            try:
+                return value.replace(year=value.year - 1)
+            except ValueError:
+                return value.replace(year=value.year - 1, day=28)
+
+        return self.revenue(Period(shift(period.start), shift(period.end)))
+
+    def growth_yoy(self, period: Period, metric: str = "revenue") -> float:
+        if metric == "orders":
+            current = self.order_count(period)
+            previous = self.order_count(
+                Period(
+                    period.start.replace(year=period.start.year - 1),
+                    period.end.replace(year=period.end.year - 1),
+                )
+            )
+        else:
+            current = self.revenue(period)
+            previous = self.revenue_last_year(period)
+        if previous <= 0:
+            return 0.0
+        return round(100.0 * (current - previous) / previous, 2)
+
+    def revenue(self, period: Period | None = None) -> float:
+        return float(self.valid_orders(period)["revenue"].sum())
+
+    def revenue_filtered(
+        self,
+        period: Period | None = None,
+        product: str | None = None,
+        category: str | None = None,
+        customer: str | None = None,
+        employee: str | None = None,
+        customer_group: str | None = None,
+    ) -> float:
+        if product or category:
+            df = self.filtered_lines(period, product=product, category=category)
+            return float(df["line_amount"].sum())
+        df = self.filtered_orders(period, customer=customer, employee=employee)
+        if customer_group and "customer_group" in df.columns:
+            key = norm_key(customer_group)
+            df = df[df["customer_group"].map(norm_key) == key]
+        return float(df["revenue"].sum())
+
+    def revenue_share(
+        self, category: str | None, period: Period | None = None
+    ) -> float | None:
+        """Category share of total revenue, in percent."""
+        if not category:
+            return None
+        total = self.revenue(period)
+        if total <= 0:
+            return None
+        part = float(
+            self.filtered_lines(period, category=category)["line_amount"].sum()
+        )
+        return round(100.0 * part / total, 2)
+
+    def top_products_filtered(
+        self,
+        period: Period | None = None,
+        by: str = "line_amount",
+        k: int = 1,
+        category: str | None = None,
+    ) -> list[tuple[str, float]]:
+        df = self.filtered_lines(period, category=category)
+        if df.empty:
+            return []
+        # "Phí phục vụ" is not a product (rulebook §3).
+        df = df[df["product"].map(lambda name: norm_key(name) != "phi phuc vu")]
+        if df.empty:
+            return []
+        metric = "base_quantity" if by == "quantity" else "line_amount"
+        if metric not in df.columns:
+            metric = "quantity" if by == "quantity" else "line_amount"
+        return self._rank_products(df, metric, k)
+
+    def order_count(self, period: Period | None = None) -> int:
+        return int(len(self.valid_orders(period)))
+
+    def cancellation_rate(self, period: Period | None = None) -> float:
+        if period is None or self.orders.empty or "status" not in self.orders.columns:
+            return 0.0
+        all_orders = self.orders[self.orders["date"].apply(period.contains)]
+        if all_orders.empty:
+            return 0.0
+        cancelled = (all_orders["status"] == "cancelled").sum()
+        return round(100.0 * cancelled / len(all_orders), 2)
+
+    def cancelled_count(self, period: Period | None = None) -> int:
+        if period is None or self.orders.empty or "status" not in self.orders.columns:
+            return 0
+        df = self.orders[self.orders["date"].apply(period.contains)]
+        return int((df["status"] == "cancelled").sum())
+
+    def top_days(
+        self, period: Period | None = None, by: str = "revenue", k: int = 1
+    ) -> list[tuple[date, float]]:
+        df = self.valid_orders(period)
+        if df.empty:
+            return []
+        metric = "revenue" if by == "revenue" else "order_id"
+        grouped = df.groupby("date")[metric].sum().sort_values(ascending=False)
+        return [(d, float(v)) for d, v in grouped.head(k).items()]
+
+    def top_months(
+        self, period: Period | None = None, by: str = "revenue", k: int = 1
+    ) -> list[tuple[str, float]]:
+        df = self.valid_orders(period)
+        if df.empty:
+            return []
+        months = df["date"].map(lambda d: d.strftime("%Y-%m") if d else None)
+        grouped = df.groupby(months)["revenue"].sum().sort_values(ascending=False)
+        return [(m, float(v)) for m, v in grouped.head(k).items()]
+
+    def count_orders_by_revenue(
+        self,
+        period: Period | None = None,
+        minimum: float | None = None,
+        maximum: float | None = None,
+    ) -> int:
+        df = self.valid_orders(period)
+        if minimum is not None:
+            df = df[df["revenue"] >= minimum]
+        if maximum is not None:
+            df = df[df["revenue"] <= maximum]
+        return int(len(df))
+
+    def count_days_by_revenue(
+        self,
+        period: Period | None = None,
+        minimum: float | None = None,
+        maximum: float | None = None,
+    ) -> int:
+        df = self.valid_orders(period)
+        if df.empty:
+            return 0
+        daily = df.groupby("date")["revenue"].sum()
+        if minimum is not None:
+            daily = daily[daily >= minimum]
+        if maximum is not None:
+            daily = daily[daily <= maximum]
+        return int(len(daily))
+
+    def _rank_products(
+        self, df: pd.DataFrame, metric: str, k: int
+    ) -> list[tuple[str, float]]:
+        frame = df.assign(_key=df["product"].map(norm_key))
+        display = frame.groupby("_key")["product"].agg(
+            lambda values: (
+                values.mode().iat[0] if len(values.mode()) else values.iloc[0]
+            )
+        )
+        values = frame.groupby("_key")[metric].sum()
+        ranked = sorted(
+            ((str(display.loc[key]), float(value)) for key, value in values.items()),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        return ranked[:k]
+
+    def top_products(
+        self, period: Period | None = None, by: str = "line_amount", k: int = 1
+    ) -> list[tuple[str, float]]:
+        df = self.lines
+        if df.empty or "date" not in df.columns or "product" not in df.columns:
+            return []
+        if period is not None:
+            df = (
+                df[df["date"].apply(period.contains)]
+                if df["date"].notna().any()
+                else df
+            )
+        df = df[~df["status"].isin(["cancelled", "returned"])]
+        # "Phí phục vụ" is not a product (rulebook §3).
+        df = df[df["product"].map(lambda name: norm_key(name) != "phi phuc vu")]
+        if df.empty:
+            return []
+        metric = "base_quantity" if by == "quantity" else "line_amount"
+        if metric not in df.columns:
+            metric = "quantity" if by == "quantity" else "line_amount"
+        return self._rank_products(df, metric, k)
+
+    def top_customers(
+        self, period: Period | None = None, k: int = 1
+    ) -> list[tuple[str, float]]:
+        df = self.valid_orders(period)
+        if df.empty:
+            return []
+        return self._rank_customers(df, "revenue", k)
+
+    def _rank_customers(
+        self,
+        df: pd.DataFrame,
+        value_column: str,
+        k: int,
+        count_orders: bool = False,
+    ) -> list[tuple[str, float]]:
+        names = df["customer"].astype(str).str.strip()
+        key = names.map(norm_key)
+        generic = {"khach le", "khach vang lai", "le", "si", "kl", ""}
+        mask = ~key.isin(generic)
+        if not mask.any():
+            return []
+        frame = df.loc[mask].copy()
+        frame["_customer_key"] = key[mask]
+        display = frame.groupby("_customer_key")["customer"].agg(
+            lambda values: (
+                values.mode().iat[0] if len(values.mode()) else values.iloc[0]
+            )
+        )
+        if count_orders:
+            values = frame.groupby("_customer_key")["order_id"].nunique()
+        else:
+            values = frame.groupby("_customer_key")[value_column].sum()
+        ranked = sorted(
+            (
+                (str(display.loc[customer_key]), float(value))
+                for customer_key, value in values.items()
+            ),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        return ranked[:k]
+
+    def debt_total(self, as_of: date | None = None) -> float:
+        df = self.orders[self.orders["status"] != "cancelled"]
+        if as_of is not None:
+            df = df[df["date"].apply(lambda d: isinstance(d, date) and d <= as_of)]
+        return float(df["debt"].clip(lower=0).sum())
+
+    def paid_total(self, period: Period | None = None) -> float:
+        df = self.valid_orders(period)
+        if df.empty or "paid" not in df.columns:
+            return 0.0
+        return float(df["paid"].sum())
+
+    def discount_total(self, period: Period | None = None) -> float | None:
+        df = self.valid_orders(period)
+        if df.empty or "discount" not in df.columns:
+            return None
+        if float(df["discount"].sum()) == 0:
+            return None
+        return float(df["discount"].sum())
+
+    def revenue_prescription(
+        self, period: Period | None, prescription: bool
+    ) -> float | None:
+        df = self.filtered_lines(period)
+        if df.empty or "prescription" not in df.columns:
+            return None
+        mask = df["prescription"].astype(bool)
+        if not prescription:
+            # OTC = everything except prescription drugs (including non-drug items).
+            total = float(df["line_amount"].sum())
+            return total - float(df.loc[mask, "line_amount"].sum())
+        part = df[mask]
+        if part.empty:
+            return None
+        return float(part["line_amount"].sum())
+
+    def prescription_share(self, period: Period | None) -> float | None:
+        total = self.revenue(period)
+        if total <= 0:
+            return None
+        part = self.revenue_prescription(period, True)
+        if part is None:
+            return None
+        return round(100.0 * part / total, 2)
+
+    def purchase_quantity(
+        self, product: str | None, period: Period | None = None
+    ) -> float | None:
+        if not product or self.purchase_lines.empty:
+            return None
+        df = self.purchase_lines
+        if period is not None and "date" in df.columns and df["date"].notna().any():
+            df = df[df["date"].apply(period.contains)]
+        key = norm_key(product)
+        rows = df[df["product"].map(norm_key) == key]
+        if rows.empty:
+            matches = [
+                name
+                for name in df["product"].dropna().unique()
+                if key in norm_key(name)
+            ]
+            if matches:
+                best = max(matches, key=lambda name: len(norm_key(name)))
+                rows = df[df["product"] == best]
+        if rows.empty:
+            return None
+        factors, base_units, units_by_product = self.conversions or ({}, {}, {})
+        total = 0.0
+        for _, row in rows.iterrows():
+            product_key = norm_key(row["product"])
+            id_value = str(row.get("product_id", "")).strip()
+            id_key = f"#{norm_key(id_value)}" if id_value else ""
+            product_keys = [key for key in (product_key, id_key) if key]
+            unit_key = norm_key(row.get("unit", ""))
+            factor = None
+            for key in product_keys:
+                factor = factors.get((key, unit_key))
+                if factor is not None:
+                    break
+            if factor is None:
+                for key in product_keys:
+                    for known in units_by_product.get(key, ()):
+                        if known and known in unit_key:
+                            factor = factors.get((key, known))
+                            break
+                    if factor is not None:
+                        break
+            total += float(row["quantity"]) * (factor if factor else 1.0)
+        return total
+
+    def revenue_payment(self, period: Period | None, keyword: str) -> float | None:
+        df = self.valid_orders(period)
+        if df.empty or "payment" not in df.columns:
+            return None
+        if df["payment"].astype(str).str.strip().eq("").all():
+            return None
+        key = norm_key(keyword)
+        matched = df[df["payment"].map(norm_key).str.contains(key, na=False)]
+        if matched.empty:
+            return None
+        return float(matched["revenue"].sum())
+
+    def payment_share(self, period: Period | None, keyword: str) -> float | None:
+        total = self.revenue(period)
+        if total <= 0:
+            return None
+        part = self.revenue_payment(period, keyword)
+        if part is None:
+            return None
+        return round(100.0 * part / total, 2)
+
+    def expense_total(self, period: Period | None = None) -> float | None:
+        if self.expenses is None or self.expenses.empty:
+            return None
+        df = self.expenses
+        if period is not None:
+            df = df[df["date"].apply(period.contains)]
+        if df.empty:
+            return None
+        return float(df["amount"].sum())
+
+    def gross_profit(self, period: Period | None = None) -> float | None:
+        df = self.filtered_lines(period)
+        if df.empty or "cost" not in df.columns:
+            return None
+        cost = float((df["quantity"] * df["cost"]).sum())
+        if cost <= 0:
+            return None
+        revenue = float(df["line_amount"].sum())
+        return revenue - cost
+
+    def net_profit(self, period: Period | None = None) -> float | None:
+        gross = self.gross_profit(period)
+        if gross is None:
+            return None
+        expense = self.expense_total(period)
+        return gross - (expense or 0.0)
+
+    def top_products_profit(
+        self, period: Period | None = None, k: int = 1
+    ) -> list[tuple[str, float]]:
+        df = self.filtered_lines(period)
+        if df.empty or "cost" not in df.columns:
+            return []
+        df = df.copy()
+        df["profit"] = df["line_amount"] - df["quantity"] * df["cost"]
+        return self._rank_products(df, "profit", k)
+
+    def debt_customers(self, as_of: date | None = None) -> int:
+        df = self.orders[self.orders["status"] != "cancelled"]
+        if as_of is not None:
+            df = df[df["date"].apply(lambda d: isinstance(d, date) and d <= as_of)]
+        df = df[df["debt"] > 0]
+        names = df["customer"].astype(str).str.strip()
+        key = names.map(norm_key)
+        df = df[~key.isin({"", "khach le", "le", "kl"})]
+        return int(key[key.index.isin(df.index)].nunique())
+
+    def top_debtors(
+        self, as_of: date | None = None, k: int = 1
+    ) -> list[tuple[str, float]]:
+        df = self.orders[self.orders["status"] != "cancelled"]
+        if as_of is not None:
+            df = df[df["date"].apply(lambda d: isinstance(d, date) and d <= as_of)]
+        df = df[df["debt"] > 0]
+        if df.empty:
+            return []
+        return self._rank_customers(df, "debt", k)
+
+    def debt_age_buckets(self, as_of: date) -> list[float] | None:
+        df = self.orders[self.orders["status"] != "cancelled"]
+        df = df[df["date"].apply(lambda d: isinstance(d, date) and d <= as_of)]
+        df = df[df["debt"] > 0]
+        if df.empty:
+            return None
+        ages = df["date"].map(lambda d: (as_of - d).days)
+        buckets = [
+            float(df.loc[(ages >= 0) & (ages <= 7), "debt"].sum()),
+            float(df.loc[(ages >= 8) & (ages <= 15), "debt"].sum()),
+            float(df.loc[ages > 15, "debt"].sum()),
+        ]
+        return buckets
+
+    def orders_with_category(
+        self, period: Period | None, category: str | None
+    ) -> int | None:
+        if not category:
+            return None
+        df = self.filtered_lines(period, category=category)
+        if df.empty:
+            return None
+        return int(df["order_id"].nunique())
+
+    def orders_with_product_keyword(
+        self, period: Period | None, keyword: str | None
+    ) -> int | None:
+        if not keyword:
+            return None
+        df = self.filtered_lines(period)
+        if df.empty or "product" not in df.columns:
+            return None
+        df = df[df["product"].map(norm_key).str.contains(keyword, na=False)]
+        if df.empty:
+            return None
+        return int(df["order_id"].nunique())
+
+    def orders_by_status(self, period: Period | None, status: str) -> int | None:
+        df = self.orders
+        if df.empty or "status" not in df.columns:
+            return None
+        if period is not None:
+            df = df[df["date"].apply(period.contains)]
+        return int((df["status"] == status).sum())
+
+    def returned_count(self, period: Period | None = None) -> int:
+        df = self.orders
+        if df.empty or "status" not in df.columns:
+            return 0
+        if period is not None:
+            df = df[df["date"].apply(period.contains)]
+        return int((df["status"] == "returned").sum())
+
+    def customers_with_orders(
+        self, period: Period | None, min_orders: int
+    ) -> int | None:
+        df = self.valid_orders(period)
+        if df.empty:
+            return None
+        names = df["customer"].astype(str).str.strip()
+        key = names.map(norm_key)
+        mask = ~key.isin({"", "khach le", "le", "kl"})
+        if not mask.any():
+            return None
+        counts = (
+            df.loc[mask].assign(_key=key[mask]).groupby("_key")["order_id"].nunique()
+        )
+        return int((counts >= min_orders).sum())
+
+    def customer_order_share(
+        self, period: Period | None, min_orders: int
+    ) -> float | None:
+        df = self.valid_orders(period)
+        if df.empty:
+            return None
+        names = df["customer"].astype(str).str.strip()
+        key = names.map(norm_key)
+        mask = ~key.isin({"", "khach le", "le", "kl"})
+        if not mask.any():
+            return None
+        counts = (
+            df.loc[mask].assign(_key=key[mask]).groupby("_key")["order_id"].nunique()
+        )
+        return round(100.0 * (counts >= min_orders).sum() / len(counts), 2)
+
+    def top_customer_orders(
+        self, period: Period | None = None, k: int = 1
+    ) -> list[tuple[str, float]]:
+        df = self.valid_orders(period)
+        if df.empty:
+            return []
+        if df.empty:
+            return []
+        return self._rank_customers(df, "order_id", k, count_orders=True)
+
+    def tradein_total(self, period: Period | None = None) -> float | None:
+        if self.tradeins is None or self.tradeins.empty:
+            return None
+        df = self.tradeins
+        if period is not None:
+            df = df[df["date"].apply(period.contains)]
+        if df.empty:
+            return None
+        return float(df["amount"].sum())
+
+    def warranty_count(self, period: Period | None = None) -> int | None:
+        if self.warranties is None or self.warranties.empty:
+            df = self.filtered_lines(period)
+            if not df.empty and "product" in df.columns:
+                mask = df["product"].map(norm_key).str.contains("bao hanh", na=False)
+                if mask.any():
+                    return int(mask.sum())
+            orders = self.valid_orders(period)
+            if not orders.empty and "service" in orders.columns:
+                mask = (
+                    orders["service"].map(norm_key).str.contains("bao hanh", na=False)
+                )
+                if mask.any():
+                    return int(mask.sum())
+            return None
+        df = self.warranties
+        if period is not None:
+            df = df[df["date"].apply(period.contains)]
+        return int(len(df))
+
+    def purchase_total(self, period: Period | None = None) -> float:
+        df = self.purchases
+        if df.empty or float(df["amount"].sum()) == 0:
+            df = self.purchase_lines
+            if df.empty:
+                return 0.0
+        if period is not None and "date" in df.columns and df["date"].notna().any():
+            df = df[df["date"].apply(period.contains)]
+        return float(df["amount"].sum())
+
+    def delivery_count(self, period: Period | None = None) -> int | None:
+        """Count delivery rounds (bill + trip) from a delivery-note table."""
+        for table in self.tables:
+            name = norm_key(f"{table.name} {table.sheet or ''}")
+            if "giao hang" not in name and "delivery" not in name:
+                continue
+            columns = {norm_key(column): column for column in table.df.columns}
+            date_col = next((columns[key] for key in columns if "ngay" in key), None)
+            if not date_col:
+                continue
+            trip_col = next(
+                (
+                    columns[key]
+                    for key in columns
+                    if "luot" in key or "dot" in key or "chuyen" in key
+                ),
+                None,
+            )
+            bill_col = next(
+                (
+                    columns[key]
+                    for key in columns
+                    if key.startswith("ma ") and ("bill" in key or "don" in key)
+                ),
+                None,
+            )
+            df = table.df
+            dates = df[date_col].map(parse_date)
+            if period is not None:
+                mask = dates.apply(
+                    lambda value: isinstance(value, date) and period.contains(value)
+                )
+                df = df[mask]
+            if df.empty:
+                return 0
+            if trip_col and bill_col:
+                return int(len(df[[bill_col, trip_col]].drop_duplicates()))
+            if trip_col:
+                return int(df[trip_col].nunique())
+            return int(len(df))
+        return None
+
+    def match_ingredient(self, question: str) -> str | None:
+        if self.lines.empty or "ingredient" not in self.lines.columns:
+            return None
+        q = norm_key(question)
+        best: str | None = None
+        best_len = 0
+        for ingredient in self.lines["ingredient"].dropna().unique():
+            key = norm_key(ingredient)
+            if len(key) >= 4 and key in q and len(key) > best_len:
+                best, best_len = str(ingredient), len(key)
+        return best
+
+    def revenue_ingredient(
+        self, period: Period | None, ingredient: str
+    ) -> float | None:
+        df = self.filtered_lines(period)
+        if df.empty or "ingredient" not in df.columns:
+            return None
+        key = norm_key(ingredient)
+        rows = df[df["ingredient"].map(norm_key) == key]
+        if rows.empty:
+            return None
+        return float(rows["line_amount"].sum())
+
+    def purchase_avg_price(
+        self, product: str | None, period: Period | None = None
+    ) -> float | None:
+        """Quantity-weighted average purchase price (rulebook §5)."""
+        if not product or self.purchase_lines.empty:
+            return None
+        df = self.purchase_lines
+        if period is not None and "date" in df.columns and df["date"].notna().any():
+            df = df[df["date"].apply(period.contains)]
+        key = norm_key(product)
+        rows = df[df["product"].map(norm_key) == key]
+        if rows.empty:
+            matches = [
+                name
+                for name in df["product"].dropna().unique()
+                if key in norm_key(name)
+            ]
+            if matches:
+                best = max(matches, key=lambda name: len(norm_key(name)))
+                rows = df[df["product"] == best]
+        if rows.empty:
+            return None
+        if "unit" in rows.columns:
+            units = rows["unit"].astype(str).str.strip().replace("", pd.NA).dropna()
+            if units.nunique() > 1:
+                return None
+        quantity = float(rows["quantity"].sum())
+        if quantity <= 0:
+            return None
+        amount = float(rows["amount"].sum())
+        if amount <= 0:
+            return None
+        return round(amount / quantity)
+
+    def top_supplier(self, period: Period | None = None) -> str | None:
+        df = self.purchase_lines
+        if df.empty or "supplier" not in df.columns:
+            return None
+        df = df[df["supplier"].astype(str).str.strip() != ""]
+        if df.empty:
+            return None
+        if period is not None and "date" in df.columns and df["date"].notna().any():
+            df = df[df["date"].apply(period.contains)]
+        if df.empty:
+            return None
+        grouped = df.groupby("supplier")["amount"].sum().sort_values(ascending=False)
+        return str(grouped.index[0]) if len(grouped) else None
+
+    def growth(self, period: Period, metric: str = "revenue") -> float:
+        prev = previous_period(period)
+        if metric == "revenue":
+            cur, old = self.revenue(period), self.revenue(prev)
+        elif metric == "orders":
+            cur, old = self.order_count(period), self.order_count(prev)
+        else:
+            cur, old = 0.0, 0.0
+        if old == 0:
+            return 0.0
+        return round(100.0 * (cur - old) / old, 2)

@@ -1,0 +1,401 @@
+﻿track,rank,team_name,slm,llm,apis
+datamate,1,NPGL,1,,1
+datamate,2,TBCPC,1,1,1
+datamate,3,innocent,1,,1
+datamate,4,Thợ Săn Tiền Giải,1,,1
+datamate,5,FatSheeDuk,1,,1
+datamate,6,Pawgrammers,1,-0.608,1
+datamate,7,ALL FATHER,1,1,1
+datamate,8,SparkMind,1,,0.659
+datamate,9,TLU,1,,1
+datamate,10,Pairameters,1,,1
+datamate,11,SakiTenma,1,1,1
+datamate,12,Ngũ Long Tranh Bá,1,1,1
+datamate,13,Sirtual,1,1,1
+datamate,14,MTCH,1,,1
+datamate,15,Only One,1,,1
+datamate,16,tongdong,1,,
+datamate,17,yesido,1,,1
+datamate,18,AILover,1,,0.998
+datamate,19,hỏng đầu,1,,0.916
+datamate,20,KieuKieu,1,,0.854
+datamate,21,Autograd Engine,1,,0.1
+datamate,22,MAFIA SUNSHINE,1,0.972,0.467
+datamate,23,Bida hong ?,1,1,1
+datamate,24,NNN,1,0.902,
+datamate,25,AIO-VQH,1,,1
+datamate,26,CopyPaste,1,1,0.988
+datamate,27,Sudo,1,,
+datamate,28,khoai_tay_chien,1,,0.39
+datamate,29,DragonHarness,1,,0.517
+datamate,30,Phúc Lộc Thọ,1,,0.912
+datamate,31,CAIRA,1,,0.521
+datamate,32,ktmv,1,,0.964
+datamate,33,Gia đình DUBU,1,,1
+datamate,34,Team VNP,1,,1
+datamate,35,Vecna,1,,0.884
+datamate,36,Sumo,1,,1
+datamate,37,CogAILab,1,,0.926
+datamate,38,Hoi chieu troi mua,1,1,1
+datamate,39,The Unicorn,1,,0.998
+datamate,40,Kitchen,1,,0.996
+datamate,41,NewJeansNeverDie,1,,1
+datamate,42,NKAAS,1,,0.984
+datamate,43,om,1,,1
+datamate,44,Pochacco,1,,0.953
+datamate,45,Bí ngoo,0.998,,0.795
+datamate,46,AIO_K24416,0.998,,1
+datamate,47,Ux3T,0.998,,-0.407
+datamate,48,PHTK,0.997,0.997,0.875
+datamate,49,Null & Void,0.996,,0.944
+datamate,50,Hanghaha,0.996,,0.982
+datamate,51,404NotFound,0.996,,0.816
+datamate,52,Cao Đẳng Bưu Điện,0.996,,0.39
+datamate,53,Band,0.995,,0.703
+datamate,54,HVT-M,0.994,,
+datamate,55,qw38,0.992,,0.079
+datamate,56,LEK,0.992,,1
+datamate,57,Haizdilao,0.992,,0.992
+datamate,58,Oneman,0.991,,0.991
+datamate,59,Nai,0.991,,0.97
+datamate,60,Alovate,0.991,,0.966
+datamate,61,KikiAI,0.991,,
+datamate,62,HarmonyCA,0.99,,0.934
+datamate,63,HHL,0.99,,0.988
+datamate,64,Uncle Agent,0.988,,0.991
+datamate,65,Claude Code,0.988,,
+datamate,66,Nhật Cường AI,0.986,,0.798
+datamate,67,ReAct,0.986,,0.948
+datamate,68,SuperAI.Z,0.985,,1
+datamate,69,Coconut,0.981,,0.994
+datamate,70,TUIUIT,0.98,,0.974
+datamate,71,Bún bà Thuỷ,0.978,,
+datamate,72,Shiba,0.977,,1
+datamate,73,CCAgent,0.972,0.971,0.968
+datamate,74,IAI-iDAN,0.972,,
+datamate,75,TripleTee,0.97,,1
+datamate,76,T07_AI,0.97,0.75,
+datamate,77,AIO-Tan-testing,0.968,,0.603
+datamate,78,5tobun,0.968,,1
+datamate,79,Claude_et_al,0.966,,1
+datamate,80,AI-team,0.963,,1
+datamate,81,Virai,0.961,,0.796
+datamate,82,Otter Go,0.96,,0.926
+datamate,83,ELAOTHE,0.957,,0.994
+datamate,84,backtracking,0.956,,0.982
+datamate,85,qqqq1,0.956,,0.968
+datamate,86,FITHCMUS-01,0.955,,0.953
+datamate,87,AIO_Cats,0.954,,1
+datamate,88,ClaudeCode,0.952,,0.912
+datamate,89,small potatoes,0.951,,0.93
+datamate,90,Huynh Quy La,0.949,,0.081
+datamate,91,Antiretroviral,0.949,,1
+datamate,92,QATop1,0.94,0.96,0.998
+datamate,93,Oldschool,0.939,,1
+datamate,94,Astra,0.938,,0.938
+datamate,95,ZaloCon,0.937,,0.911
+datamate,96,Susu,0.936,,0.188
+datamate,97,FITHCMUS-39,0.935,,1
+datamate,98,Roxy-Mouse,0.934,,0.063
+datamate,99,LoneWolf,0.932,,0.932
+datamate,100,VUbest,0.932,,0.758
+datamate,101,undono,0.932,,0.687
+datamate,102,Bá khí,0.931,,0.894
+datamate,103,Huskie,0.931,,1
+datamate,104,Scooby-Doo,0.931,0.976,0.997
+datamate,105,AIO_Edgerunner,0.928,,0.998
+datamate,106,P.A.,0.928,,0.742
+datamate,107,No1-HTK,0.922,,0.864
+datamate,108,2006coder,0.922,,0.922
+datamate,109,Mixture of Experts,0.921,,0.917
+datamate,110,HoiKinZalo,0.921,,0.991
+datamate,111,Alex,0.92,,0.92
+datamate,112,Vibe Coder,0.92,0.98,0.046
+datamate,113,AIO - Lovisong,0.915,,0.968
+datamate,114,AIO_LUONVUITUOI,0.915,0.915,0.982
+datamate,115,Hien,0.913,,0.99
+datamate,116,AIO_KoNgungBoCuoc,0.912,,0.82
+datamate,117,C3A-Infinity,0.912,0.871,0.516
+datamate,118,La Ming Ya Mao,0.912,,0.356
+datamate,119,Ánh Dương,0.912,,0.98
+datamate,120,Tây Du Ký,0.912,,0.906
+datamate,121,ZAIO,0.907,,0.909
+datamate,122,nlp.os,0.907,,0.698
+datamate,123,netle,0.906,,0.545
+datamate,124,Ngũ Đại Hào Hiệp,0.904,,0.64
+datamate,125,FITHCMUS-36,0.904,,0.966
+datamate,126,Agent_Reincarnated,0.903,,0.48
+datamate,127,Kapi,0.901,,
+datamate,128,OOV,0.899,,0.99
+datamate,129,shadow_garden,0.896,,1
+datamate,130,FYT Celestia,0.895,,1
+datamate,131,CSer,0.892,,1
+datamate,132,FITHCMUS-29,0.892,,1
+datamate,133,Pragmatix,0.892,,0.856
+datamate,134,An,0.889,0.768,1
+datamate,135,noname,0.888,,0.954
+datamate,136,DoanChiBInh,0.887,0.926,0.99
+datamate,137,Hcm,0.886,,0.89
+datamate,138,AVBM,0.886,,0.682
+datamate,139,Ankara,0.885,,-0.034
+datamate,140,No Die Can Win,0.885,0.708,0.996
+datamate,141,big_wind,0.884,,1
+datamate,142,alo,0.882,,0.938
+datamate,143,95LAB,0.88,,
+datamate,144,AILocal,0.877,,0.05
+datamate,145,Edgerunner,0.874,,0.874
+datamate,146,Domino,0.873,,0.664
+datamate,147,Sky,0.87,,
+datamate,148,Solo123,0.87,,
+datamate,149,SDSRV,0.869,0.864,0.864
+datamate,150,Namm,0.867,,0.577
+datamate,151,Fprinciples,0.865,,0.663
+datamate,152,Solobolo,0.864,,0.778
+datamate,153,gardneng,0.855,,0.992
+datamate,154,CTAI,0.85,0.961,0.953
+datamate,155,Trinity,0.849,,0.681
+datamate,156,MedData VN,0.847,0.847,0.825
+datamate,157,PTNK_AKK,0.847,,0.852
+datamate,158,IT Du Ký,0.845,,0.992
+datamate,159,TimTuTi,0.841,0.955,0.901
+datamate,160,PrompTProtectors,0.833,,0.952
+datamate,161,Out of Memory (OOM),0.829,,
+datamate,162,FITHCMUS-10,0.827,0.023,0.681
+datamate,163,Nguyễn Gia Nô,0.826,,0.84
+datamate,164,Murphy’s Law,0.825,,
+datamate,165,SQUARE ONE,0.824,,0.824
+datamate,166,Arcane,0.82,,0.936
+datamate,167,Lifebuoys,0.81,,1
+datamate,168,Aplus,0.808,,0.998
+datamate,169,glhf,0.807,,0.832
+datamate,170,con ga AI,0.804,,
+datamate,171,429,0.804,0.909,0.954
+datamate,172,hans.the.nephophile,0.79,,0.762
+datamate,173,HCMUT_E1,0.786,,
+datamate,174,Agentic,0.784,,
+datamate,175,IComeForFood,0.782,,0.779
+datamate,176,spaceontk,0.78,,0.832
+datamate,177,1107Bros,0.772,,0.826
+datamate,178,Kiếm Tiền Nuôi Vợ,0.769,,0.998
+datamate,179,FITHCMUS-3,0.764,,1
+datamate,180,CantBeDefeated,0.758,,
+datamate,181,Tao là leader,0.755,,0.648
+datamate,182,KMP - Fruc,0.755,,0.237
+datamate,183,Sologirl,0.75,,0.998
+datamate,184,Đụng Độ,0.75,0.922,1
+datamate,185,TensorTonic,0.746,,1
+datamate,186,misi gaming,0.742,,0.994
+datamate,187,lemonade,0.741,,
+datamate,188,AltF4,0.741,,1
+datamate,189,Sơn Són,0.74,,0.574
+datamate,190,calibrated,0.739,,0.09
+datamate,191,smolvision,0.737,0.696,0.988
+datamate,192,Tech Titan,0.731,,0.705
+datamate,193,Dynamo,0.721,0.904,0.923
+datamate,194,HUNTER,0.715,,1
+datamate,195,TodeProtocol,0.714,,0.537
+datamate,196,lightworknoreaction,0.712,,
+datamate,197,temporary,0.711,,
+datamate,198,iTwin-huuduyenthiWin,0.708,,1
+datamate,199,Như Một Vì Tinh Tú,0.708,,
+datamate,200,Haoshoku,0.704,,0.357
+lifemate,1,So Far So Good,99.22,,99.55
+lifemate,2,Caro,99.21,,17.27
+lifemate,3,TrustedAI,96.66,,96.66
+lifemate,4,BXT,96.58,,96.58
+lifemate,5,Tấn Cường - Tèo,96.25,,96.25
+lifemate,6,DamTinhMienTrung,96,,95.98
+lifemate,7,67Labs,95.74,,93.72
+lifemate,8,Stupid Reseach Team,95.73,,49.45
+lifemate,9,Pawgrammers,95.72,,95.72
+lifemate,10,Piece Of Cake,95.12,95.43,95.54
+lifemate,11,Akatsuki,95,,96.43
+lifemate,12,429,94.74,74.68,94.58
+lifemate,13,QED,94.13,,92.65
+lifemate,14,daniel_nguyen,93.93,,
+lifemate,15,Biết Thì Thưa,93.59,,93.91
+lifemate,16,Ngũ Long Tranh Bá,93.55,69.43,94.58
+lifemate,17,Manchester United,92.89,,92.89
+lifemate,18,rhinoAI,92.86,,92.86
+lifemate,19,meow,92.81,,92.78
+lifemate,20,TheKingReturn,92.16,,45.69
+lifemate,21,k vượt baseline,92.04,,
+lifemate,22,Null & Void,91.95,85.75,91.92
+lifemate,23,TCL,91.84,,91.27
+lifemate,24,LNCG,91.78,,94.58
+lifemate,25,phoaln,91.67,,96.09
+lifemate,26,AIO_HUSTxFPT,91.43,35.82,85.47
+lifemate,27,MarkneticM83,89.38,,93.22
+lifemate,28,GHOST//AI,89.12,,74.74
+lifemate,29,Đụng Độ,89.02,33.74,90.22
+lifemate,30,zazazazazaza,89.01,,89.01
+lifemate,31,Năm anh em siêu nhân,88.69,,72.5
+lifemate,32,T07_AI,88.44,,88.22
+lifemate,33,Snakes,88.18,,78.45
+lifemate,34,change_some_thing,86.75,,86.75
+lifemate,35,AIO - Lovisong,85.84,,90.99
+lifemate,36,PTIT_Tào Phớ,84.71,,
+lifemate,37,Hehihi,83.56,,84.56
+lifemate,38,Resonance,83.53,,92.76
+lifemate,39,Beelliards,82.29,83.3,67
+lifemate,40,mattimkhocloc,82.09,77.61,63.35
+lifemate,41,VTIT Rewriter,81.26,,81.26
+lifemate,42,TensorTonic,81.04,,95.33
+lifemate,43,TripleU,80.79,80.79,89.34
+lifemate,44,TienPhat,80.78,,90.99
+lifemate,45,bunscas,80.52,,95.31
+lifemate,46,LEK,80.48,,95.76
+lifemate,47,KoRodriBanhĐâuMàChơi,80.35,83.15,
+lifemate,48,innocent,80.08,,94.89
+lifemate,49,Đế Thính,79.31,,89.39
+lifemate,50,Wang Lin,79.27,,
+lifemate,51,nvlk,79.2,,92.85
+lifemate,52,requirements.txt,78.7,,74.82
+lifemate,53,EnEN,78.65,,84.12
+lifemate,54,Fantastic Four,78.55,,84.22
+lifemate,55,AIO_VuaVeNhi,78.54,,84.63
+lifemate,56,Thợ Săn Tiền Giải,78.01,,78.01
+lifemate,57,AI_Cham,77.13,87.48,95.94
+lifemate,58,khanhbruhhh,77.1,,
+lifemate,59,PHẠM HÙNG TIẾN,76.85,,73.16
+lifemate,60,Secret,76.74,,68.97
+lifemate,61,ZAIC_2_25,76.17,,96.66
+lifemate,62,Nguyễn Hoàng Gia Lô,76.12,,50.43
+lifemate,63,B.O.A.T,76.12,84.29,61.13
+lifemate,64,Nguyen,75.37,69.89,58.61
+lifemate,65,Me and my dogs,75.26,,
+lifemate,66,Noah,74,,82.23
+lifemate,67,UIT_3ChangLinhNguLam,73.92,,56.05
+lifemate,68,MalFire,73.84,,94.93
+lifemate,69,HA,73.82,,
+lifemate,70,HCMUTE-HCMUS,73.03,,97.28
+lifemate,71,404NotFound,72.8,78.2,60.03
+lifemate,72,ConCaNho,72.54,,81.11
+lifemate,73,RMIT_Muck,71.94,,
+lifemate,74,wokeupat3am,71.67,,
+lifemate,75,XMax,71.48,,95.81
+lifemate,76,Bonjour,71.38,,69.61
+lifemate,77,CCAgent,70.94,,63.16
+lifemate,78,DuckDat,70.85,,78.97
+lifemate,79,welcomeToHCM,70.84,,86.82
+lifemate,80,KNHT,70.73,,78.91
+lifemate,81,Kiếm Tiền Nuôi Vợ,70.49,,64.67
+lifemate,82,Ulala,70.47,,68.67
+lifemate,83,WinOrWin,70.29,,70.29
+lifemate,84,GenAI,70.23,70.84,83.73
+lifemate,85,SOC_AI_TRANSFORM,70.02,,70.02
+lifemate,86,Pairameters,69.84,,64.85
+lifemate,87,Nhân Vin,69.72,,57.65
+lifemate,88,COFLAR AI,69.68,,49.93
+lifemate,89,BDonTOP,69.64,,69.78
+lifemate,90,ZaloT,69.3,,67.52
+lifemate,91,Chiếc lá,69.3,,0
+lifemate,92,ForFun,69.25,,52.25
+lifemate,93,Shiba,69.02,,94.28
+lifemate,94,Oneman,68.82,,68.39
+lifemate,95,NemoAI,68.7,,68.29
+lifemate,96,VINAGENT,68.61,,67.83
+lifemate,97,LoiDiRieng,68.49,,26.68
+lifemate,98,chanh,68.45,,70.91
+lifemate,99,S-Team,68.32,,50.74
+lifemate,100,Oldschool,68.26,,87.86
+lifemate,101,TheCity,68.07,61.29,85.48
+lifemate,102,33a9,68.05,,86.38
+lifemate,103,SpiderMan,68.05,,
+lifemate,104,DUCNTM,67.87,,59.42
+lifemate,105,Chivas,67.77,,75.13
+lifemate,106,NPGL,67.73,,78.74
+lifemate,107,Chạy đâu con sâu,67.64,,96.51
+lifemate,108,AAU,67.17,65.46,63.74
+lifemate,109,chilly_chilly,66.93,75.29,61.27
+lifemate,110,UIT_4M1Z,66.91,,64.31
+lifemate,111,Susanoo,66.74,77.33,90.15
+lifemate,112,SOH_12A7,66.63,,96.85
+lifemate,113,Arrebol,66.61,,
+lifemate,114,Polyskill,66.6,,55.17
+lifemate,115,Max20characters,66.6,61.83,54.85
+lifemate,116,BKU-TraiĐẹpLạnhLùng,66.56,,66.56
+lifemate,117,Hallucination Nation,66.48,,
+lifemate,118,VUbest,66.43,,64.71
+lifemate,119,vibecolor,66.35,,56.61
+lifemate,120,kusuki,66.09,,57.09
+lifemate,121,Trí tuệ Nhân đạo,66.04,,64.65
+lifemate,122,Auren,66,,61.67
+lifemate,123,HCMUT_ACEgentic,65.74,,81.28
+lifemate,124,6h50,65.54,,65.54
+lifemate,125,Vakad_AI,65.48,,
+lifemate,126,CSer,65.39,,63.21
+lifemate,127,Giang Hồ Tranh Bá,65.24,,38.42
+lifemate,128,Ngũ Đại Hào Hiệp,65.22,,34.91
+lifemate,129,Stefansayno,65.18,,91.11
+lifemate,130,StopLoss,65.15,,82.9
+lifemate,131,Rhino Ghost,65.04,,64.98
+lifemate,132,claude-codex,64.98,,97.32
+lifemate,133,PTIT.AI,64.92,,57.29
+lifemate,134,OFA,64.88,64.88,58.97
+lifemate,135,Contrastive,64.77,,28.93
+lifemate,136,AIbou,64.64,,62.22
+lifemate,137,Lythuidich,64.63,,63.94
+lifemate,138,Roxy-Mouse,64.63,,73.5
+lifemate,139,khoai_tay_chien,64.62,,45.15
+lifemate,140,UIT - L&K,64.53,60.09,22.04
+lifemate,141,CTAI,64.52,5.99,61.12
+lifemate,142,Phamily,64.5,,21.93
+lifemate,143,Onepunch,64.5,,79.06
+lifemate,144,shadow_garden,64.47,,
+lifemate,145,3B,64.46,,90.97
+lifemate,146,TheBegginer,64.46,,59.23
+lifemate,147,No Die Can Win,64.45,,62.88
+lifemate,148,Me and my devil,64.32,54.5,60.44
+lifemate,149,AIO_Pentatonis,64.3,,30.73
+lifemate,150,HUST-COTS,64.26,,60.01
+lifemate,151,bài tập về nhà,64.15,,91.37
+lifemate,152,came to conquer,64.13,,90.98
+lifemate,153,NAS et al,64.08,,64.08
+lifemate,154,TTQ,64.05,,64.05
+lifemate,155,zAIo_Astra,63.97,,
+lifemate,156,Avengers,63.95,,
+lifemate,157,GiaPhuocThinh,63.9,,
+lifemate,158,Fprinciples,63.85,,41.61
+lifemate,159,The 3 good boys,63.68,,82.4
+lifemate,160,Ngan,63.65,,96.69
+lifemate,161,zitzangzuize,63.63,,62.19
+lifemate,162,Galaxy Cyclone,63.63,,93.13
+lifemate,163,VN1DC,63.63,,85.15
+lifemate,164,Silent Prayer,63.59,,68.7
+lifemate,165,dễ thương ko,63.54,,91.18
+lifemate,166,Scooby-Doo,63.53,,70.89
+lifemate,167,AIO-SCOAI,63.44,,91.76
+lifemate,168,MondayCouple,63.4,,63.4
+lifemate,169,MakeECVGreat,63.28,51.28,
+lifemate,170,TripleTrouble,63.23,,47.85
+lifemate,171,Tuatconhilo,63.17,,
+lifemate,172,QATop1,63.16,,
+lifemate,173,Sirtual,63.01,15.91,53.48
+lifemate,174,Overfit,62.92,,
+lifemate,175,THE ALCHEMISTS,62.76,,62.04
+lifemate,176,AIO_E401,62.75,,64.08
+lifemate,177,Zalophobia,62.75,,10.54
+lifemate,178,LoRagent,62.74,,
+lifemate,179,Claude_et_al,62.64,,60.83
+lifemate,180,PTIT_OutOfToken,62.64,,62.11
+lifemate,181,HABIBIES in DUBAI,62.61,,62.61
+lifemate,182,ITN,62.61,,59.47
+lifemate,183,AIO_Cats,62.57,,60.88
+lifemate,184,C3A-Infinity,62.52,,55.4
+lifemate,185,Team A,62.51,,
+lifemate,186,Neko Core,62.5,,95.49
+lifemate,187,Maybe Agent Not Me,62.39,,48.56
+lifemate,188,AIO-Baseline,62.31,,45.05
+lifemate,189,Weamis,62.28,,41.2
+lifemate,190,Aegent Syelf,62.13,,78.07
+lifemate,191,NTT Clauxet-AnyHear,62.05,,63.17
+lifemate,192,Hephaestus,62.01,,
+lifemate,193,Jason,61.99,,
+lifemate,194,Huskie,61.93,,94.05
+lifemate,195,Như một vì tinh tú,61.87,,62.69
+lifemate,196,AIO_BaKhiGalaxy,61.8,,
+lifemate,197,Spartans-ETL,61.76,,96.56
+lifemate,198,247M,61.72,,60.87
+lifemate,199,TAMCA,61.68,,60.29
+lifemate,200,Lyoko,61.67,,56.31

@@ -1,0 +1,13 @@
+[project]
+name = "ledgerai"
+version = "0.1.0"
+description = "LedgerAI - offline Vietnamese data agent for Zalo AI Challenge 2026 DataMate"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.2",
+    "openpyxl>=3.1",
+    "python-dateutil>=2.9",
+]
+
+[tool.uv]
+dev-dependencies = []

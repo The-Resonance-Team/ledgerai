@@ -1,0 +1,36 @@
+# Fallback build for the final image.
+#
+# The validated linux/amd64 image `zaic2026_datamate_ledgerai:test` is already
+# present on the build host. It contains the vLLM/CUDA base, the Gemma 4 12B
+# weights and the train data. This file layers the frozen final code on top, so
+# the build needs no registry access and does not re-copy 24GB of weights.
+#
+# Build:
+#   docker build --platform linux/amd64 \
+#     -f docker/Dockerfile.rebuild -t zaic2026_datamate_ledgerai:final .
+FROM zaic2026_datamate_ledgerai:test
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
+
+WORKDIR /code
+
+COPY src/ /code/src/
+COPY eval/run_eval.py /code/eval/run_eval.py
+COPY eval/run_eval_llm.py /code/eval/run_eval_llm.py
+COPY eval/holdout.py /code/eval/holdout.py
+COPY predict.py /code/predict.py
+COPY docker/README.code.md /code/README.md
+COPY data_manifest.json /code/data_manifest.json
+COPY docker/predict.sh /code/predict.sh
+COPY docker/training_code/ /code/training_code/
+COPY data/raw/train/ /code/data/raw/train/
+COPY qa/ /code/qa/
+
+RUN find /code/src /code/eval -name '__pycache__' -type d -prune -exec rm -rf {} + \
+    && chmod +x /code/predict.sh
+
+ENTRYPOINT []
+CMD ["/code/predict.sh"]
