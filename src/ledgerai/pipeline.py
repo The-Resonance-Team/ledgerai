@@ -1120,7 +1120,7 @@ class BaselineRouter:
 
             product = match_product(question, ds)
             days_match = re.search(
-                r"(\d{1,2})\s*ngay\s*(?:ke tu|ke tu ngay|sau|tinh tu|tu\b)", t
+                r"(\d{1,2})\s*ngay\s*(?:ke tu|ke tu ngay|sau|tinh tu|tu\b|dau)", t
             )
             date_match = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", raw)
             day = None
