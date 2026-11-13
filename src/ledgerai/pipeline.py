@@ -309,6 +309,7 @@ class BaselineRouter:
         raw = re.sub(r"\b(nhoms)\b", "nhom", raw)
         raw = re.sub(r"\b(khachs)\b", "khach", raw)
         raw = re.sub(r"\b(huyr|huyf)\b", "huy", raw)
+        raw = re.sub(r"\b(roa)\b", "ra", raw)
         t = norm_key(raw)
         period = resolve_period(raw, as_of) if _has_period(raw) else None
         k = _count_k(t)
@@ -1468,7 +1469,15 @@ class BaselineRouter:
         # Must also run before the stock branches below: "tổng cộng" does
         # not contain "tồn" (word boundary), but older plans misrouted here.
         if _has(
-            t, "xe da giao", "da giao", "da cho di", "cho di", "giao duoc", "cho di"
+            t,
+            "xe da giao",
+            "da giao",
+            "duoc giao",
+            "da cho di",
+            "duoc cho",
+            "cho di",
+            "giao duoc",
+            "cho di",
         ) and not _has(t, "khong giao duoc", "khong giao hang", "chua giao"):
             from .verifier import match_product as _match_product_dl
 
