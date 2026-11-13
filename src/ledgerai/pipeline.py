@@ -14,6 +14,7 @@ from .dataset import Dataset
 from .normalize import norm_key, parse_number, strip_diacritics
 from .periods import (
     Period,
+    _month_end,
     extract_month_refs,
     is_tet_period,
     previous_period,
@@ -441,7 +442,7 @@ class BaselineRouter:
             and period is not None
             and not (
                 _has(t, "khach", "khach hang")
-                and _has(t, "nhom si", "nhom le", "nhom than thiet")
+                and _words(t, "nhom si", "nhom le", "nhom than thiet")
             )
         ):
             from .verifier import match_category
@@ -693,7 +694,7 @@ class BaselineRouter:
                     )
 
         # Revenue of a customer group (sỉ / lẻ / thân thiết).
-        if period is not None and _has(t, "nhom si", "nhom le", "nhom than thiet"):
+        if period is not None and _words(t, "nhom si", "nhom le", "nhom than thiet"):
             group = (
                 "sỉ"
                 if _has(t, "nhom si")
@@ -1427,7 +1428,7 @@ class BaselineRouter:
         ) or (
             _has(t, "chan")
             and _words(t, "le")
-            and _has(t, "con", "ton", "kho", "cuoi ngay", "hom nay")
+            and (_words(t, "con") or _has(t, "ton", "kho", "cuoi ngay", "hom nay"))
             and not _has(t, "khach")
         ):
             stock_product = _match_inventory(question, ds)
@@ -1460,6 +1461,60 @@ class BaselineRouter:
                         confidence=0.8,
                         plan="stock_on_hand",
                     )
+
+        # 4a2. Delivered quantity from delivery notes ("xe đã giao ...").
+        # Must run before sales-quantity branches: the same product/quantity
+        # words appear, but delivery notes are the source of truth.
+        # Must also run before the stock branches below: "tổng cộng" does
+        # not contain "tồn" (word boundary), but older plans misrouted here.
+        if _has(
+            t, "xe da giao", "da giao", "da cho di", "cho di", "giao duoc", "cho di"
+        ) and not _has(t, "khong giao duoc", "khong giao hang", "chua giao"):
+            from .verifier import match_product as _match_product_dl
+
+            delivered_product = _match_product_dl(question, ds)
+            if delivered_product and _has(
+                t, "bao nhieu", "may", "bnhiu", "tong cong", "tat ca"
+            ):
+                # "Các đơn đặt tháng X ... đã chở đi": the month selects the
+                # ORDER date; delivery only needs to be on/before as_of.
+                order_period = None
+                if _has(t, "don dat", "don hang dat", "dat thang", "don thang"):
+                    refs = extract_month_refs(raw, as_of)
+                    if refs:
+                        year, month = refs[0]
+                        order_period = Period(
+                            date(year, month, 1),
+                            _month_end(year, month),
+                            f"tháng {month:02d}/{year}",
+                        )
+                if order_period is not None:
+                    delivered = ds.delivered_quantity_for_orders(
+                        order_period, as_of, delivered_product
+                    )
+                else:
+                    # "Tới hôm nay ... tổng cộng" is cumulative up to as_of,
+                    # not just today's deliveries.
+                    bounds = ds.date_range()
+                    if _has(t, "toi hom nay", "den hom nay", "tinh toi") and bounds:
+                        cumulative = Period(bounds[0], as_of, "tới hôm nay")
+                    else:
+                        cumulative = period
+                    if cumulative is None and bounds:
+                        cumulative = Period(bounds[0], as_of, "tới hôm nay")
+                    delivered = (
+                        ds.delivered_quantity(cumulative, delivered_product)
+                        if cumulative is not None
+                        else None
+                    )
+                if delivered is not None:
+                    return Answer(
+                        "number",
+                        _round_money(delivered),
+                        confidence=0.75,
+                        plan="delivered_quantity",
+                    )
+            return Answer("abstain", plan="delivered_quantity")
 
         # 4b. Product-aware revenue and quantity.
         from .verifier import match_product
@@ -1535,8 +1590,9 @@ class BaselineRouter:
                 )
             # "Còn bao nhiêu" asks what REMAINS (stock), not what sold.
             # With no inventory ledger the question is unanswerable.
+            # "con" needs a word boundary: "tổng cộng" contains it.
             if (
-                _has(t, "con")
+                _words(t, "con")
                 and not _has(t, "ban duoc", "ban ra", "ban dc", "ban chay", "ban nhieu")
                 and not _has(t, "no", "cong no", "tra no", "thu no")
                 and not (_has(t, "chan") and _words(t, "le"))

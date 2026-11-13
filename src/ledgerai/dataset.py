@@ -2723,6 +2723,127 @@ class Dataset:
             df = df[df["date"].apply(period.contains)]
         return float(df["amount"].sum())
 
+    def delivered_quantity(
+        self, period: Period | None, product: str | None
+    ) -> float | None:
+        """Delivered quantity of one product from delivery-note tables."""
+        if not product:
+            return None
+        key = norm_key(product)
+        total = 0.0
+        found = False
+        for table in self.tables:
+            name = norm_key(f"{table.name} {table.sheet or ''}")
+            if "giao hang" not in name and "delivery" not in name:
+                continue
+            columns = {norm_key(str(c)): c for c in table.df.columns}
+            product_col = next(
+                (
+                    columns[k]
+                    for k in columns
+                    if "hang hoa" in k or "ten hang" in k or "san pham" in k
+                ),
+                None,
+            )
+            qty_col = next(
+                (
+                    columns[k]
+                    for k in columns
+                    if ("so luong" in k and "giao" in k)
+                    or k in {"sl giao", "so luong giao"}
+                ),
+                None,
+            )
+            date_col = next(
+                (columns[k] for k in columns if "ngay" in k or "thoi gian" in k),
+                None,
+            )
+            if product_col is None or qty_col is None:
+                continue
+            df = table.df
+            if date_col is not None and period is not None:
+                dates = df[date_col].map(parse_date)
+                df = df[dates.apply(lambda d: _is_date(d) and period.contains(d))]
+            matches = df[df[product_col].map(norm_key).str.contains(key, na=False)]
+            if matches.empty:
+                continue
+            total += float(_to_num(matches[qty_col]).sum())
+            found = True
+        return total if found else None
+
+    def delivered_quantity_for_orders(
+        self,
+        order_period: Period | None,
+        delivery_end,
+        product: str | None,
+    ) -> float | None:
+        """Delivered quantity for orders placed in order_period.
+
+        Used by "Các đơn đặt tháng X, tới hôm nay đã chở đi ..." questions:
+        the order month selects the order IDs, the delivery date only needs
+        to be on or before delivery_end.
+        """
+        if not product:
+            return None
+        key = norm_key(product)
+        order_ids: set[str] | None = None
+        if order_period is not None and not self.orders.empty:
+            mask = self.orders["date"].apply(order_period.contains)
+            order_ids = set(self.orders.loc[mask, "order_id"].astype(str).str.strip())
+            order_ids.discard("")
+            if not order_ids:
+                return None
+        total = 0.0
+        found = False
+        for table in self.tables:
+            name = norm_key(f"{table.name} {table.sheet or ''}")
+            if "giao hang" not in name and "delivery" not in name:
+                continue
+            columns = {norm_key(str(c)): c for c in table.df.columns}
+            product_col = next(
+                (
+                    columns[k]
+                    for k in columns
+                    if "hang hoa" in k or "ten hang" in k or "san pham" in k
+                ),
+                None,
+            )
+            qty_col = next(
+                (
+                    columns[k]
+                    for k in columns
+                    if ("so luong" in k and "giao" in k)
+                    or k in {"sl giao", "so luong giao"}
+                ),
+                None,
+            )
+            date_col = next(
+                (columns[k] for k in columns if "ngay" in k or "thoi gian" in k),
+                None,
+            )
+            oid_col = next(
+                (
+                    columns[k]
+                    for k in columns
+                    if "so don" in k or "ma don" in k or "don hang" in k
+                ),
+                None,
+            )
+            if product_col is None or qty_col is None:
+                continue
+            df = table.df
+            if order_ids is not None and oid_col is not None:
+                df = df[df[oid_col].astype(str).str.strip().isin(order_ids)]
+            if date_col is not None and delivery_end is not None:
+                dates = df[date_col].map(parse_date)
+                df = df[dates.apply(lambda d: _is_date(d) and d <= delivery_end)]
+            matches = df[df[product_col].map(norm_key).str.contains(key, na=False)]
+            if matches.empty:
+                continue
+            total += float(_to_num(matches[qty_col]).sum())
+            found = True
+        return total if found else None
+
     def delivery_count(self, period: Period | None = None) -> int | None:
         """Count delivery rounds (bill + trip) from a delivery-note table."""
         for table in self.tables:
