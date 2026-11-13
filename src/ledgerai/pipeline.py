@@ -1058,17 +1058,22 @@ class BaselineRouter:
                 )
 
         # Prescription vs over-the-counter revenue.
-        if _has(t, "ke don", "thuoc ke don"):
+        if _has(t, "ke don", "thuoc ke don", "can don", "don bac si"):
             if period is not None:
                 is_otc = _has(
                     t,
                     "khong ke don",
                     "ko ke don",
                     "k ke don",
+                    "k don",
                     "hong ke don",
                     "khong can ke don",
+                    "khong can don",
+                    "khong don",
+                    "khong theo don",
                     "tru thuoc ke don",
                     "tru ke don",
+                    "tru don",
                 )
                 if _has(t, "chiem", "ti trong", "phan tram") or "%" in raw:
                     share = ds.prescription_share(period)
@@ -1752,6 +1757,7 @@ class BaselineRouter:
                     confidence=0.8,
                     plan="inventory_value",
                 )
+            return Answer("abstain", plan="inventory_value_no_data")
 
         # 4b1. Closing stock as [full packs, loose units]. Pack words are
         # open-ended (hộp, xe, cuộn, cây, ...); the chẵn/lẻ pair is the
@@ -2067,9 +2073,11 @@ class BaselineRouter:
                     )
                 return Answer("abstain", plan="lots_expiring_list")
             # Count of lots with remaining stock expiring in N days.
+            # "lo" and "han" must be word matches: bare substrings hit
+            # "salonpas"/"Loan" (lo) and "thang"/"hang" (han).
             if (
-                _has(t, "lo")
-                and _has(t, "han", "hsd", "het han")
+                _words(t, "lo", "lo hang", "lo thuoc")
+                and _has(t, "hsd", "het han", "han dung", "han su dung")
                 and _has(
                     t, "bao nhieu", "bao nhiu", "bnhiu", "bn", "may", "nhieu", "dem"
                 )
