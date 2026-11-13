@@ -2512,7 +2512,7 @@ class Dataset:
             exact = df[keys == key]
             if exact.empty and key:
                 # Alias spellings: same product recorded under another name.
-                for spelling in ds.product_name_set(product):
+                for spelling in self.product_name_set(product):
                     exact = df[keys == spelling]
                     if not exact.empty:
                         break

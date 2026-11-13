@@ -1980,6 +1980,11 @@ class BaselineRouter:
         ):
             group = ds.group_from_question(question)
             if group:
+                from .verifier import match_category as _match_cat
+
+                if _match_cat(question, ds) is not None:
+                    group = []
+            if group:
                 money_words = _has(
                     t,
                     "doanh thu",
@@ -1992,7 +1997,7 @@ class BaselineRouter:
                 quantity_words = _has(
                     t, "ban duoc", "ban ra", "ban dc", "may", "bao nhieu", "so luong"
                 )
-                if money_words and not quantity_words:
+                if money_words:
                     return Answer(
                         "number",
                         _round_money(ds.revenue_group(period, group)),
