@@ -1412,11 +1412,23 @@ class BaselineRouter:
                     plan="inventory_value",
                 )
 
-        # 4b1. Closing stock as [full packs, loose units].
-        if _has(t, "hop chan", "goi chan", "thung chan", "bao chan") or (
-            _has(t, "hop", "goi", "thung", "bao", "lo")
-            and _has(t, "chan", "le")
+        # 4b1. Closing stock as [full packs, loose units]. Pack words are
+        # open-ended (hộp, xe, cuộn, cây, ...); the chẵn/lẻ pair is the
+        # signature. Customer tiers ("khách lẻ") never pair with "chẵn".
+        if _has(
+            t,
+            "hop chan",
+            "goi chan",
+            "thung chan",
+            "bao chan",
+            "xe chan",
+            "cuon chan",
+            "cay chan",
+        ) or (
+            _has(t, "chan")
+            and _words(t, "le")
             and _has(t, "con", "ton", "kho", "cuoi ngay", "hom nay")
+            and not _has(t, "khach")
         ):
             stock_product = _match_inventory(question, ds)
             if stock_product:
@@ -1527,6 +1539,7 @@ class BaselineRouter:
                 _has(t, "con")
                 and not _has(t, "ban duoc", "ban ra", "ban dc", "ban chay", "ban nhieu")
                 and not _has(t, "no", "cong no", "tra no", "thu no")
+                and not (_has(t, "chan") and _words(t, "le"))
             ):
                 if ds.inventory is None or ds.inventory.empty:
                     return Answer("unanswerable", plan="stock_no_inventory")
