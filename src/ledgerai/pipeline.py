@@ -313,6 +313,7 @@ class BaselineRouter:
         raw = re.sub(r"\b(laix)\b", "lai", raw)
         raw = re.sub(r"\b(nhieuf)\b", "nhieu", raw)
         raw = re.sub(r"\b(nhieeu|nhieuu)\b", "nhieu", raw)
+        raw = re.sub(r"\bdoanhthu\b", "doanh thu", raw)
         raw = re.sub(r"\b(nhan dien|nhan diem)\b", "nhan vien", raw)
         raw = re.sub(r"\bwan\b", "quan", raw)
         raw = re.sub(r"\bbna\b", "ban", raw)
@@ -972,6 +973,20 @@ class BaselineRouter:
                     confidence=0.8,
                     plan="customers_with_orders",
                 )
+        # New member registrations ("khach thanh vien dang ky moi").
+        if (
+            period is not None
+            and _has(t, "dang ky", "thanh vien", "hoi vien")
+            and _has(t, "bao nhieu", "bao nhiu", "bnhiu", "bn", "may", "nhieu", "so")
+        ):
+            if ds.member_dates:
+                return Answer(
+                    "number",
+                    ds.count_new_members(period),
+                    confidence=0.8,
+                    plan="new_members",
+                )
+            return Answer("abstain", plan="new_members_no_data")
         if _has(t, "khach") and _has(
             t,
             "mua nhieu don nhat",
@@ -983,6 +998,8 @@ class BaselineRouter:
             "nhiu don nhat",
             "mua nhiu don",
             "nhiu don",
+            "nhieudon",
+            "nhiudon",
         ):
             top = ds.top_customer_orders(period, k=1)
             if top:
@@ -1247,16 +1264,22 @@ class BaselineRouter:
             return Answer("abstain", plan="list_other")
 
         # 1. "Ngày nào / tháng nào / hôm nào ... cao nhất" -> date.
-        if _has(t, "ngay nao", "hom nao", "bua nao") and _has(
-            t,
-            "cao nhat",
-            "nhieu nhat",
-            "nhiu nhat",
-            "dat nhat",
-            "ban dac nhat",
-            "ban dat nhat",
-            "nhieu tien nhat",
-            "nhiu tien nhat",
+        # Dialect "mô" = "nào" ("ngay mo ... nhieu tien nhat").
+        # Repair questions ("dong xe mo ... nhat") belong to 6c2 below.
+        if (
+            (_has(t, "ngay nao", "hom nao", "bua nao") or _words(t, "mo"))
+            and _has(
+                t,
+                "cao nhat",
+                "nhieu nhat",
+                "nhiu nhat",
+                "dat nhat",
+                "ban dac nhat",
+                "ban dat nhat",
+                "nhieu tien nhat",
+                "nhiu tien nhat",
+            )
+            and not (ds.has_repair_data() and _has(t, "sua", "tho", "dong xe"))
         ):
             if period is None or not _has(
                 t, "doanh thu", "dthu", "ban duoc", "thu ve", "tien"
@@ -1287,10 +1310,15 @@ class BaselineRouter:
                 t,
                 "ban chay nhat",
                 "ban nhieu nhat",
+                "ban nhiu nhat",
                 "ban dc nhieu nhat",
+                "ban dc nhiu nhat",
                 "ban duoc nhieu",
+                "ban duoc nhiu",
                 "ban ra nhieu",
+                "ban ra nhiu",
                 "ban dc nhieu",
+                "ban dc nhiu",
                 "hot nhat",
                 "ban chay",
                 "chay nhat",
@@ -1873,6 +1901,166 @@ class BaselineRouter:
                         )
                     return Answer("abstain", plan="phone_condition_revenue")
 
+        # 6c3. Pharmacy lots, expiry and stock-outs (Nha thuoc rulebook §6).
+        if ds.has_lot_data():
+            # Stock-out at end of day ("het hang", not "het han" = expiry).
+            if _has(t, "het hang", "chay hang", "dut hang") and _has(
+                t,
+                "bao nhieu",
+                "bao nhiu",
+                "bnhiu",
+                "bn",
+                "may",
+                "nhieu",
+                "nhiu",
+                "dem",
+            ):
+                day = as_of
+                m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", raw)
+                if m:
+                    try:
+                        day = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+                    except ValueError:
+                        pass
+                return Answer(
+                    "number",
+                    ds.stockout_count(day),
+                    confidence=0.8,
+                    plan="stockout_count",
+                )
+            # Nearest expiry of one product ("lo ... gan het han nhat").
+            if _has(t, "gan het han", "can date", "canh date", "sap het han"):
+                from .verifier import match_product as _match_prod
+
+                product = _match_prod(question, ds)
+                if product is None:
+                    for name in ds.lot_product_names():
+                        if norm_key(name) in t and len(norm_key(name)) >= 5:
+                            product = name
+                            break
+                if product:
+                    expiry = ds.nearest_lot_expiry(product, as_of)
+                    if expiry is not None and hasattr(expiry, "isoformat"):
+                        return Answer(
+                            "date",
+                            expiry.isoformat(),
+                            confidence=0.8,
+                            plan="nearest_lot_expiry",
+                        )
+                    return Answer("abstain", plan="nearest_lot_expiry")
+            # Capital tied in expiring lots ("dong tien von", "tien von").
+            if _has(t, "tien von") or _words(t, "von"):
+                dates = [
+                    (int(m.group(3)), int(m.group(2)), int(m.group(1)))
+                    for m in re.finditer(r"(\d{1,2})/(\d{1,2})/(\d{4})", raw)
+                ]
+                if len(dates) >= 2:
+                    start = date(dates[0][0], dates[0][1], dates[0][2])
+                    end = date(dates[1][0], dates[1][1], dates[1][2])
+                else:
+                    m = re.search(r"(\d{1,3})\s*ngay", raw)
+                    days = int(m.group(1)) if m else 0
+                    from datetime import timedelta as _td
+
+                    start, end = as_of, as_of + _td(days=days)
+                return Answer(
+                    "number",
+                    _round_money(ds.lot_capital_range(as_of, start, end)),
+                    confidence=0.8,
+                    plan="lot_capital",
+                )
+            # Product lists with lots expiring in a window.
+            if _has(
+                t, "ke giup", "liet ke", "nhung sp", "sp nao", "nhung mat hang"
+            ) and _has(t, "het han", "hsd", "han dung"):
+                dates = [
+                    (int(m.group(3)), int(m.group(2)), int(m.group(1)))
+                    for m in re.finditer(r"(\d{1,2})/(\d{1,2})/(\d{4})", raw)
+                ]
+                if len(dates) >= 2:
+                    start = date(dates[0][0], dates[0][1], dates[0][2])
+                    end = date(dates[1][0], dates[1][1], dates[1][2])
+                else:
+                    m = re.search(r"(\d{1,3})\s*ngay", raw)
+                    days = int(m.group(1)) if m else 0
+                    from datetime import timedelta as _td
+
+                    start, end = as_of, as_of + _td(days=days)
+                names = ds.products_with_lots_in_range(as_of, start, end)
+                if names:
+                    return Answer(
+                        "list",
+                        names,
+                        confidence=0.7,
+                        plan="lots_expiring_list",
+                    )
+                return Answer("abstain", plan="lots_expiring_list")
+            # Count of lots with remaining stock expiring in N days.
+            if (
+                _has(t, "lo")
+                and _has(t, "han", "hsd", "het han")
+                and _has(
+                    t, "bao nhieu", "bao nhiu", "bnhiu", "bn", "may", "nhieu", "dem"
+                )
+            ):
+                m = re.search(r"(\d{1,3})\s*ngay", raw)
+                days = int(m.group(1)) if m else 0
+                return Answer(
+                    "number",
+                    ds.lots_expiring_count(as_of, days),
+                    confidence=0.8,
+                    plan="lots_expiring_count",
+                )
+
+        # 6c4. Installment schedules (Cua hang dien thoai rulebook §6).
+        if ds.has_installments():
+            # Balance-type questions use the explicit day, not as_of.
+            ref = as_of
+            m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", raw)
+            if m and _has(t, "tai ngay", "het ngay", "den ngay", "ngay "):
+                try:
+                    ref = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+                except ValueError:
+                    pass
+            # Terms due for one customer ("khach X toi han may ky").
+            customer = None
+            best_len = 0
+            for name in ds.installment_customers():
+                key = norm_key(name)
+                if len(key) >= 4 and key in t and len(key) > best_len:
+                    customer, best_len = str(name), len(key)
+            if (
+                customer
+                and _has(t, "ky", "ki")
+                and _has(
+                    t, "may", "bao nhieu", "bao nhiu", "bnhiu", "toi han", "den han"
+                )
+            ):
+                return Answer(
+                    "number",
+                    ds.installment_terms_due(customer, ref),
+                    confidence=0.8,
+                    plan="installment_terms_due",
+                )
+            # Overdue money ("tien cham gop").
+            if _has(t, "cham gop", "cham dong", "no gop") and _has(
+                t, "bao nhieu", "bao nhiu", "bnhiu", "tien", "bnhieu"
+            ):
+                return Answer(
+                    "number",
+                    _round_money(ds.installment_overdue_total(ref)),
+                    confidence=0.75,
+                    plan="installment_overdue_total",
+                )
+            # People with overdue terms ("qua han gop").
+            if _has(t, "qua han") and _has(t, "gop", "tra gop", "ky"):
+                return Answer(
+                    "number",
+                    len(ds.installment_overdue_customers(ref)),
+                    confidence=0.8,
+                    plan="installment_overdue_count",
+                )
+
         # 4b. Product-aware revenue and quantity.
         from .verifier import match_product
 
@@ -2427,6 +2615,8 @@ class BaselineRouter:
                     confidence=0.85,
                     plan="repair_ticket_count",
                 )
+
+        # 6d. Service ticket count by job keyword ("thay dầu láp ...").
 
         # 6d. Service ticket count by job keyword ("thay dầu láp ...").
         if (

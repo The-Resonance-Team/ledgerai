@@ -213,6 +213,11 @@ class Dataset:
     product_conditions: dict = None  # type: ignore[assignment]
     gender_of_customer: dict = None  # type: ignore[assignment]
     repair_tickets: pd.DataFrame = None  # type: ignore[assignment]
+    lots: pd.DataFrame = None  # type: ignore[assignment]
+    lot_uses: pd.DataFrame = None  # type: ignore[assignment]
+    stock_ledger: pd.DataFrame = None  # type: ignore[assignment]
+    installments: pd.DataFrame = None  # type: ignore[assignment]
+    member_dates: list = None  # type: ignore[assignment]
 
     @classmethod
     def load(cls, biz_dir: Path) -> "Dataset":
@@ -533,6 +538,9 @@ class Dataset:
         ds.product_conditions = master_conditions
         ds.gender_of_customer = gender_map
         ds.repair_tickets = cls._build_repairs(tables, employees)
+        ds.lots, ds.lot_uses, ds.stock_ledger = cls._build_lots(tables)
+        ds.installments = cls._build_installments(tables)
+        ds.member_dates = cls._build_member_dates(tables)
         return ds
 
     # --------------------------------------------------------------- ledgers
@@ -929,6 +937,493 @@ class Dataset:
             valid = df["date"].apply(lambda v: _is_date(v) and v.weekday() == weekday)
             count = int(valid.sum())
         return round(count / len(matching), 2)
+
+    # Pharmacy lots and expiry (Nha thuoc rulebook §6). Detected by column
+    # names ('ma_lo', 'han_su_dung', 'ton_cuoi'), whatever the inferred role.
+    @classmethod
+    def _build_lots(cls, tables) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        lot_frames, use_frames, ledger_frames = [], [], []
+        order_dates: dict[str, object] = {}
+        return_dates: dict[str, object] = {}
+        product_names: dict[str, str] = {}
+        for table in tables:
+            df = table.df
+            if df.empty:
+                continue
+            norm_cols = {norm_key(str(c)): c for c in df.columns}
+            keys = set(norm_cols)
+            if {"ma lo", "han su dung"} <= keys and "don vi tinh" not in keys:
+                # (Import lines also carry ma_lo/han_su_dung but their prices
+                # are per import unit, not per base unit: skip them.)
+                out = pd.DataFrame(index=df.index)
+                out["lot"] = df[norm_cols["ma lo"]].astype(str).str.strip()
+                out["product_id"] = (
+                    df[norm_cols["ma hang hoa"]].astype(str).str.strip()
+                    if "ma hang hoa" in norm_cols
+                    else ""
+                )
+                out["expiry"] = df[norm_cols["han su dung"]].map(parse_date)
+                qty_col = next(
+                    (
+                        norm_cols[k]
+                        for k in (
+                            "slnhap quy doi",
+                            "sl nhap quy doi",
+                            "sl nhap",
+                            "so luong nhap",
+                        )
+                        if k in norm_cols
+                    ),
+                    None,
+                )
+                out["qty_in"] = _to_num(df[qty_col]) if qty_col else 0.0
+                price_col = next(
+                    (norm_cols[k] for k in ("don gia nhap",) if k in norm_cols),
+                    None,
+                )
+                # lo_hang prices are already per base unit (verified: price
+                # equals chi_tiet_nhap price / pack factor).
+                out["unit_price"] = _to_num(df[price_col]) if price_col else 0.0
+                lot_frames.append(out)
+            if {"ma lo", "ma hoa don"} <= keys:
+                out = pd.DataFrame(index=df.index)
+                out["lot"] = df[norm_cols["ma lo"]].astype(str).str.strip()
+                out["order_id"] = df[norm_cols["ma hoa don"]].astype(str).str.strip()
+                q_col = next(
+                    (
+                        norm_cols[k]
+                        for k in (
+                            "slquy doi",
+                            "sl quy doi",
+                            "so luong",
+                            "slquydoi",
+                        )
+                        if k in norm_cols
+                    ),
+                    None,
+                )
+                out["qty_out"] = _to_num(df[q_col]) if q_col else 0.0
+                r_col = next(
+                    (
+                        norm_cols[k]
+                        for k in ("sltra quy doi", "sl tra quy doi")
+                        if k in norm_cols
+                    ),
+                    None,
+                )
+                out["qty_back"] = _to_num(df[r_col]) if r_col else 0.0
+                use_frames.append(out)
+            if "ma hoa don" in keys and not {"ma lo"}.issubset(keys):
+                date_col = next(
+                    (
+                        norm_cols[k]
+                        for k in (
+                            "ngay lap",
+                            "thoi gian lap",
+                            "ngay dat",
+                            "ngay gio tra",
+                        )
+                        if k in norm_cols
+                    ),
+                    None,
+                )
+                if date_col is not None:
+                    # Return tables feed return dates; order tables feed dates.
+                    is_return = (
+                        "ma phieu tra" in norm_cols or "ngay gio tra" in norm_cols
+                    )
+                    dates = df[date_col].map(parse_date)
+                    for oid, day in zip(df[norm_cols["ma hoa don"]].astype(str), dates):
+                        if day is None:
+                            continue
+                        if is_return:
+                            if oid not in return_dates:
+                                return_dates[oid] = day
+                        elif oid not in order_dates:
+                            order_dates[oid] = day
+            if {"ma hang hoa", "ten goi"} <= keys:
+                for pid, name in zip(
+                    df[norm_cols["ma hang hoa"]].astype(str),
+                    df[norm_cols["ten goi"]].astype(str),
+                ):
+                    if pid.strip() and name.strip() and pid not in product_names:
+                        product_names[pid] = name.strip()
+            if {"ma hang hoa", "ton cuoi"} <= keys:
+                date_col = next(
+                    (
+                        norm_cols[k]
+                        for k in ("ngay gio phat sinh", "ngay", "thoi gian")
+                        if k in norm_cols
+                    ),
+                    None,
+                )
+                if date_col is not None:
+                    out = pd.DataFrame(index=df.index)
+                    out["product_id"] = (
+                        df[norm_cols["ma hang hoa"]].astype(str).str.strip()
+                    )
+                    out["date"] = df[date_col].map(parse_date)
+                    out["stock"] = _to_num(df[norm_cols["ton cuoi"]])
+                    ledger_frames.append(out)
+        lots = (
+            pd.concat(lot_frames, ignore_index=True)
+            if lot_frames
+            else pd.DataFrame(
+                columns=["lot", "product_id", "expiry", "qty_in", "unit_price"]
+            )
+        )
+        uses = (
+            pd.concat(use_frames, ignore_index=True)
+            if use_frames
+            else pd.DataFrame(columns=["lot", "order_id", "qty_out", "qty_back"])
+        )
+        if not uses.empty:
+            uses["date"] = uses["order_id"].map(order_dates)
+            uses["return_date"] = uses["order_id"].map(return_dates)
+        ledger = (
+            pd.concat(ledger_frames, ignore_index=True)
+            if ledger_frames
+            else pd.DataFrame(columns=["product_id", "date", "stock"])
+        )
+        if not lots.empty and product_names:
+            lots["product"] = lots["product_id"].map(product_names).fillna("")
+        elif "product" not in lots.columns:
+            lots["product"] = ""
+        return lots, uses, ledger
+
+    def has_lot_data(self) -> bool:
+        return self.lots is not None and not self.lots.empty
+
+    def _lot_remaining(self, as_of) -> "pd.DataFrame":
+        """Lots with remaining quantity at `as_of` (future moves ignored)."""
+        lots = self.lots
+        if lots is None or lots.empty:
+            return lots
+        out_tot = pd.Series(0.0, index=lots.index)
+        back_tot = pd.Series(0.0, index=lots.index)
+        if self.lot_uses is not None and not self.lot_uses.empty:
+            uses = self.lot_uses
+            lot_key = uses["lot"].astype(str)
+            out_qty = uses["qty_out"].fillna(0).astype(float)
+            back_qty = uses["qty_back"].fillna(0).astype(float)
+            if as_of is not None:
+                move_day = uses.get("date")
+                if move_day is not None:
+                    keep = ~move_day.apply(lambda v: _is_date(v) and v > as_of)
+                    out_qty = out_qty[keep]
+                    lot_out = lot_key[keep]
+                else:
+                    lot_out = lot_key
+                back_day = uses.get("return_date")
+                if back_day is not None:
+                    keep = ~back_day.apply(lambda v: _is_date(v) and v > as_of)
+                    back_qty = back_qty[keep]
+                    lot_back = lot_key[keep]
+                else:
+                    lot_back = lot_key
+            else:
+                lot_out, lot_back = lot_key, lot_key
+            out_sum = out_qty.groupby(lot_out).sum()
+            back_sum = back_qty.groupby(lot_back).sum()
+            lots_key = lots["lot"].astype(str)
+            out_tot = lots_key.map(out_sum).fillna(0).astype(float)
+            back_tot = lots_key.map(back_sum).fillna(0).astype(float)
+        out = lots.copy()
+        out["remaining"] = lots["qty_in"].fillna(0).astype(float) - out_tot + back_tot
+        return out[out["remaining"] > 0]
+
+    def lots_expiring_count(self, as_of, days: int) -> int:
+        from datetime import timedelta
+
+        df = self._lot_remaining(as_of)
+        if df is None or df.empty:
+            return 0
+        end = as_of + timedelta(days=days) if as_of else None
+        mask = df["expiry"].apply(
+            lambda v: (
+                _is_date(v)
+                and (as_of is None or v >= as_of)
+                and (end is None or v <= end)
+            )
+        )
+        return int(mask.sum())
+
+    def lot_capital_range(self, as_of, start, end) -> float:
+        df = self._lot_remaining(as_of)
+        if df is None or df.empty:
+            return 0.0
+        mask = df["expiry"].apply(lambda v: _is_date(v) and v >= start and v <= end)
+        picked = df[mask]
+        if picked.empty:
+            return 0.0
+        return float((picked["remaining"] * picked["unit_price"].fillna(0)).sum())
+
+    def nearest_lot_expiry(self, product: str, as_of) -> object:
+        df = self._lot_remaining(as_of)
+        if df is None or df.empty or not product:
+            return None
+        key = norm_key(product)
+        names = df["product"].map(norm_key)
+        exact = df[names == key]
+        if exact.empty and key:
+            exact = df[names.str.contains(key, na=False)]
+        if exact.empty:
+            return None
+        upcoming = exact[
+            exact["expiry"].apply(
+                lambda v: _is_date(v) and (as_of is None or v >= as_of)
+            )
+        ]
+        if upcoming.empty:
+            return None
+        return upcoming["expiry"].min()
+
+    def products_with_lots_in_range(self, as_of, start, end) -> list[str]:
+        df = self._lot_remaining(as_of)
+        if df is None or df.empty:
+            return []
+        mask = df["expiry"].apply(lambda v: _is_date(v) and v >= start and v <= end)
+        picked = df[mask]
+        if picked.empty:
+            return []
+        # Rulebook §9: earliest expiry first, ties by product id.
+        earliest = (
+            picked.groupby(["product_id", "product"])["expiry"].min().reset_index()
+        )
+        earliest = earliest.sort_values(["expiry", "product_id"])
+        return [str(name) for name in earliest["product"] if str(name).strip()]
+
+    def lot_product_names(self) -> list[str]:
+        if self.lots is None or self.lots.empty or "product" not in self.lots.columns:
+            return []
+        return [
+            str(n) for n in self.lots["product"].dropna().unique() if str(n).strip()
+        ]
+
+    def stockout_count(self, day) -> int:
+        """Products whose stock at end of `day` is zero (the_kho TonCuoi)."""
+        ledger = self.stock_ledger
+        if ledger is None or ledger.empty:
+            return 0
+        valid = ledger[ledger["date"].apply(lambda v: _is_date(v) and v <= day)]
+        if valid.empty:
+            return 0
+        last = valid.sort_values("date").groupby("product_id").tail(1)
+        return int((last["stock"].fillna(0) == 0).sum())
+
+    # Installment schedules (Cua hang dien thoai rulebook §6). The SoNo
+    # ledger groups rows by contract (stt): the first row carries the
+    # customer, term count and monthly amount; every row is one term with
+    # its payment date (ngay_gop) and paid amount (da_gop). Due dates are
+    # monthly on han_gop_ngay starting the month after the contract date.
+    @classmethod
+    def _build_installments(cls, tables) -> pd.DataFrame:
+        cols_out = [
+            "customer",
+            "contract",
+            "term",
+            "due",
+            "monthly",
+            "paid_date",
+            "paid",
+        ]
+        frames = []
+        for table in tables:
+            df = table.df
+            if df.empty:
+                continue
+            norm_cols = {norm_key(str(c)): c for c in df.columns}
+            keys = set(norm_cols)
+            if not ({"so ky", "gop thang"} <= keys):
+                continue
+            if "ngay gop" not in keys and "han gop ngay" not in keys:
+                continue
+            stt_col = next(
+                (norm_cols[k] for k in ("stt", "so thu tu") if k in norm_cols),
+                None,
+            )
+            date_col = next(
+                (norm_cols[k] for k in ("ngay", "ngay mua") if k in norm_cols),
+                None,
+            )
+            cust_col = next(
+                (
+                    norm_cols[k]
+                    for k in ("khach", "khach hang", "ten khach")
+                    if k in norm_cols
+                ),
+                None,
+            )
+            due_col = next(
+                (norm_cols[k] for k in ("han gop ngay",) if k in norm_cols),
+                None,
+            )
+            paid_date_col = next(
+                (norm_cols[k] for k in ("ngay gop",) if k in norm_cols),
+                None,
+            )
+            paid_col = next(
+                (norm_cols[k] for k in ("da gop",) if k in norm_cols),
+                None,
+            )
+            monthly_col = next(
+                (norm_cols[k] for k in ("gop thang",) if k in norm_cols),
+                None,
+            )
+            groups: dict[str, list] = {}
+            order: list[str] = []
+            for idx, row in df.iterrows():
+                key = str(row[stt_col]).strip() if stt_col is not None else str(idx)
+                if key not in groups:
+                    groups[key] = []
+                    order.append(key)
+                groups[key].append(row)
+            for key in order:
+                rows = groups[key]
+                first = rows[0]
+                customer = str(first[cust_col]).strip() if cust_col is not None else ""
+                if not customer:
+                    continue
+                contract_day = (
+                    parse_date(first[date_col]) if date_col is not None else None
+                )
+                han_day = None
+                if due_col is not None:
+                    try:
+                        han_day = int(float(str(first[due_col]).strip()))
+                    except (ValueError, TypeError):
+                        han_day = None
+                monthly = (
+                    parse_number(first[monthly_col])
+                    if monthly_col is not None
+                    else None
+                )
+                for number, row in enumerate(rows, start=1):
+                    due = None
+                    if (
+                        contract_day is not None
+                        and hasattr(contract_day, "year")
+                        and han_day
+                    ):
+                        month = contract_day.month + number
+                        year = contract_day.year + (month - 1) // 12
+                        month = (month - 1) % 12 + 1
+                        import calendar as _cal
+
+                        last = _cal.monthrange(year, month)[1]
+                        try:
+                            due = date(year, month, min(han_day, last))
+                        except ValueError:
+                            due = None
+                    frames.append(
+                        {
+                            "customer": customer,
+                            "contract": key,
+                            "term": number,
+                            "due": due,
+                            "monthly": monthly or 0.0,
+                            "paid_date": (
+                                parse_date(row[paid_date_col])
+                                if paid_date_col is not None
+                                else None
+                            ),
+                            "paid": (
+                                parse_number(row[paid_col])
+                                if paid_col is not None
+                                else 0.0
+                            )
+                            or 0.0,
+                        }
+                    )
+        if not frames:
+            return pd.DataFrame(columns=cols_out)
+        return pd.DataFrame(frames)
+
+    def has_installments(self) -> bool:
+        return self.installments is not None and not self.installments.empty
+
+    def installment_customers(self) -> list[str]:
+        if not self.has_installments():
+            return []
+        return [
+            str(n)
+            for n in self.installments["customer"].dropna().unique()
+            if str(n).strip()
+        ]
+
+    def _installment_paid_by(self, paid_date, paid: float, ref) -> float:
+        if paid_date is not None and hasattr(paid_date, "year"):
+            if paid_date <= ref:
+                return float(paid or 0)
+            return 0.0
+        return float(paid or 0)
+
+    def installment_overdue_customers(self, ref) -> list[str]:
+        """Customers with a term due before `ref` not fully paid by `ref`."""
+        if not self.has_installments():
+            return []
+        late: set[str] = set()
+        for _, row in self.installments.iterrows():
+            due = row["due"]
+            if due is None or not hasattr(due, "year") or due >= ref:
+                continue
+            paid = self._installment_paid_by(row["paid_date"], row["paid"], ref)
+            if paid < (row["monthly"] or 0):
+                late.add(str(row["customer"]))
+        return sorted(late)
+
+    def installment_overdue_total(self, ref) -> float:
+        if not self.has_installments():
+            return 0.0
+        total = 0.0
+        for _, row in self.installments.iterrows():
+            due = row["due"]
+            if due is None or not hasattr(due, "year") or due >= ref:
+                continue
+            paid = self._installment_paid_by(row["paid_date"], row["paid"], ref)
+            total += max(0.0, (row["monthly"] or 0) - paid)
+        return total
+
+    def installment_terms_due(self, customer: str, ref) -> int:
+        """Terms of one customer with due date on or before `ref`."""
+        if not self.has_installments():
+            return 0
+        key = norm_key(customer)
+        df = self.installments[self.installments["customer"].map(norm_key) == key]
+        if df.empty:
+            df = self.installments[
+                self.installments["customer"].map(norm_key).str.contains(key, na=False)
+            ]
+        if df.empty:
+            return 0
+        return int(
+            df["due"]
+            .apply(lambda v: hasattr(v, "year") and v is not None and v <= ref)
+            .sum()
+        )
+
+    @classmethod
+    def _build_member_dates(cls, tables) -> list:
+        """Registration dates from member registries ('ngay dang ky')."""
+        dates: list = []
+        for table in tables:
+            df = table.df
+            if df.empty:
+                continue
+            norm_cols = {norm_key(str(c)): c for c in df.columns}
+            if "ngay dang ky" not in norm_cols:
+                continue
+            for value in df[norm_cols["ngay dang ky"]].map(parse_date):
+                if _is_date(value):
+                    dates.append(value)
+        return dates
+
+    def count_new_members(self, period) -> int:
+        if not self.member_dates:
+            return 0
+        if period is None:
+            return len(self.member_dates)
+        return sum(1 for day in self.member_dates if period.contains(day))
 
     @classmethod
     def _build_expenses(cls, tables, profiles, roles) -> pd.DataFrame:
