@@ -301,6 +301,7 @@ class BaselineRouter:
         raw = re.sub(r"\b(thangs)\b", "thang", raw)
         raw = re.sub(r"\b(quys)\b", "quy", raw)
         raw = re.sub(r"\b(nhaats|nhut|nhuts)\b", "nhat", raw)
+        raw = re.sub(r"\b(nhta)\b", "nhat", raw)
         raw = re.sub(r"\b(quaan)\b", "quan", raw)
         raw = re.sub(r"\b(mooix)\b", "moi", raw)
         raw = re.sub(r"\b(leen)\b", "len", raw)
