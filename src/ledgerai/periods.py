@@ -145,7 +145,10 @@ def extract_month_refs(text: str, today: date) -> list[tuple[int, int]]:
     """
     dated: list[tuple[int, int, int]] = []  # (pos, year, month)
     spans: list[tuple[int, int]] = []
-    for m in re.finditer(r"(?:thang\s*)?(\d{1,2})\s*[/\-]\s*(\d{4}|\d{2})(?!\d)", text):
+    for m in re.finditer(
+        r"(?:thang\s*)?(\d{1,2})\s*[/\-]\s*(\d{4}|\d{2})(?!\d)(?!\s*[/\-]\s*\d{4})",
+        text,
+    ):
         month, year_raw = int(m.group(1)), m.group(2)
         year = int(year_raw) if len(year_raw) == 4 else 2000 + int(year_raw)
         if 1 <= month <= 12:
