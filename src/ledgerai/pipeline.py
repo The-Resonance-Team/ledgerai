@@ -1272,6 +1272,21 @@ class BaselineRouter:
                 confidence=0.85,
                 plan="cancellation_rate",
             )
+        # A cancellation "vì <lý do>" (late delivery, out of stock, ...)
+        # needs a reason the ledger does not record. Train gold marks the
+        # identical "huỷ vì giao trễ" question unanswerable.
+        if _words(t, "huy") and _has(
+            t,
+            "giao tre",
+            "giao muon",
+            "ship tre",
+            "ship muon",
+            "giao hang tre",
+            "van chuyen tre",
+            "giao cham",
+            "ship cham",
+        ):
+            return Answer("unanswerable", plan="cancel_reason_unknown")
         if _words(t, "huy") and _has(t, "don", "dh", "hoa don", "bill"):
             if period is None:
                 return Answer("abstain", plan="cancel_count")
