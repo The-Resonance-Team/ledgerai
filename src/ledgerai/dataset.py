@@ -209,10 +209,61 @@ class Dataset:
     @classmethod
     def load(cls, biz_dir: Path) -> "Dataset":
         tables = load_business(Path(biz_dir))
-        return cls.from_tables(Path(biz_dir).name, tables)
+        return cls.from_tables(
+            Path(biz_dir).name, tables, cls._parse_readme_factors(Path(biz_dir))
+        )
+
+    @staticmethod
+    def _parse_readme_factors(
+        biz_dir: Path,
+    ) -> tuple[dict[tuple[str, str], float], dict[str, set[str]]]:
+        """Parse "Quy đổi đơn vị" bullets: `- Product: 1 pack = N base`.
+
+        Shop ledgers often leave bulk rows unconverted (1 thùng = 1 base).
+        The README states the pack factors the gold answers use.
+        """
+        factors: dict[tuple[str, str], float] = {}
+        units: dict[str, set[str]] = {}
+        readme = Path(biz_dir) / "README.md"
+        if not readme.exists():
+            return factors, units
+        try:
+            text = readme.read_text(encoding="utf-8")
+        except OSError:
+            return factors, units
+        pattern = re.compile(
+            r"^\s*-\s*(.+?):\s*1\s+([^0-9=]+?)\s*=\s*([0-9]+)\s+(.+?)\s*$"
+        )
+        for line in text.splitlines():
+            match = pattern.match(line)
+            if not match:
+                continue
+            product, pack, count, _base = match.groups()
+            try:
+                number = int(count)
+            except ValueError:
+                continue
+            if number <= 1:
+                continue
+            product_key = norm_key(product)
+            pack_key = norm_key(pack)
+            if (
+                not product_key
+                or not pack_key
+                or any(character.isdigit() for character in pack_key)
+            ):
+                continue
+            factors[(product_key, pack_key)] = float(number)
+            units.setdefault(product_key, set()).add(pack_key)
+        return factors, units
 
     @classmethod
-    def from_tables(cls, business_id: str, tables: list[Table]) -> "Dataset":
+    def from_tables(
+        cls,
+        business_id: str,
+        tables: list[Table],
+        readme_factors: tuple[dict, dict] | None = None,
+    ) -> "Dataset":
         from .profile import infer_table_role, profile_table
 
         profiles = {id(t): profile_table(t) for t in tables}
@@ -262,6 +313,14 @@ class Dataset:
         conversion_tables = [t for t in tables if roles[id(t)] == "conversions"]
 
         conversions = cls._build_conversions(tables, profiles)
+        if readme_factors:
+            readme_map, readme_units = readme_factors
+            factors, base_units, units_by_product = conversions
+            for key, value in readme_map.items():
+                factors.setdefault(key, value)
+            for key, value in readme_units.items():
+                units_by_product.setdefault(key, set()).update(value)
+            conversions = (factors, base_units, units_by_product)
         customers = cls._build_customers(tables, profiles, roles)
         orders = cls._build_orders(order_tables, line_tables, profiles)
         if not customers.empty and not orders.empty:
@@ -1147,6 +1206,36 @@ class Dataset:
                 )
             else:
                 out["base_quantity"] = out["quantity"]
+            if factors:
+                # Bulk rows are sometimes left unconverted in the source
+                # (1 thùng recorded as 1 base unit). The README/table pack
+                # factors state the gold convention; apply them only to rows
+                # that still look unconverted (base == quantity).
+                product_key = out["product"].map(norm_key)
+                unit_key = out["unit"].map(norm_key)
+                combos = pd.Series(list(zip(product_key, unit_key)), index=out.index)
+                multipliers = combos.map(factors)
+                if "product_id" in out.columns:
+                    missing = multipliers.isna()
+                    if missing.any():
+                        raw_ids = out.loc[missing, "product_id"].astype(str).str.strip()
+                        id_key = raw_ids.map(
+                            lambda value: f"#{norm_key(value)}" if value else ""
+                        )
+                        id_combos = pd.Series(
+                            list(zip(id_key, unit_key[missing])),
+                            index=out.index[missing],
+                        )
+                        multipliers.loc[missing] = id_combos.map(factors)
+                fixable = (
+                    multipliers.notna()
+                    & (multipliers > 1)
+                    & ((out["base_quantity"] - out["quantity"]).abs() < 1e-9)
+                )
+                if fixable.any():
+                    out.loc[fixable, "base_quantity"] = (
+                        out.loc[fixable, "quantity"] * multipliers[fixable]
+                    )
             out["unit_price"] = _to_num(df[cols["price"]]) if cols.get("price") else 0.0
             amount_col = cols.get("amount") or cols.get("total")
             out["line_amount"] = (
