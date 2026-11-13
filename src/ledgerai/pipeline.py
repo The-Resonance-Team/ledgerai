@@ -310,6 +310,13 @@ class BaselineRouter:
         raw = re.sub(r"\b(khachs)\b", "khach", raw)
         raw = re.sub(r"\b(huyr|huyf)\b", "huy", raw)
         raw = re.sub(r"\b(roa)\b", "ra", raw)
+        raw = re.sub(r"\b(laix)\b", "lai", raw)
+        raw = re.sub(r"\b(nhieuf)\b", "nhieu", raw)
+        # "bao nhiêu tền" (tền = tiền typo); "tên" alone also means name,
+        # so only normalize right after a quantity word.
+        raw = re.sub(r"\b(bao nhieu|bnhiu|bnhieu|bn)\s+ten\b", r"\1 tien", raw)
+        # "đông khách nhất dào mấy giờ" (dào = vào typo, time context only).
+        raw = re.sub(r"\bdao\s+(may\s+gio|luc\s+may|gio\s+nao)\b", r"vao \1", raw)
         t = norm_key(raw)
         period = resolve_period(raw, as_of) if _has_period(raw) else None
         k = _count_k(t)
@@ -329,7 +336,15 @@ class BaselineRouter:
             t, "doanh thu", "dthu"
         ):
             refs = extract_month_refs(raw, as_of)
-            if len(refs) >= 2:
+            # Only answer when the months run ascending and consecutive in the
+            # question ("th8, th9, th10"); two-part claims ("T7 cao hon T6,
+            # roi T8 cao hon T7") need pairwise checks we cannot do.
+            consecutive = len(refs) >= 2 and all(
+                (refs[i + 1][0] * 12 + refs[i + 1][1]) - (refs[i][0] * 12 + refs[i][1])
+                == 1
+                for i in range(len(refs) - 1)
+            )
+            if consecutive:
                 (y, m), (end_y, end_m) = refs[0], refs[-1]
                 months = []
                 while (y, m) <= (end_y, end_m) and len(months) <= 24:
@@ -443,7 +458,20 @@ class BaselineRouter:
             and period is not None
             and not (
                 _has(t, "khach", "khach hang")
-                and _words(t, "nhom si", "nhom le", "nhom than thiet")
+                and _words(
+                    t,
+                    "nhom si",
+                    "nhom le",
+                    "nhom than thiet",
+                    "nhom khach si",
+                    "nhom khach le",
+                    "nhom khach than thiet",
+                    "khach nhom si",
+                    "khach nhom le",
+                    "khach nhom than thiet",
+                    "khach si",
+                    "khach le",
+                )
             )
         ):
             from .verifier import match_category
@@ -695,7 +723,20 @@ class BaselineRouter:
                     )
 
         # Revenue of a customer group (sỉ / lẻ / thân thiết).
-        if period is not None and _words(t, "nhom si", "nhom le", "nhom than thiet"):
+        if period is not None and _words(
+            t,
+            "nhom si",
+            "nhom le",
+            "nhom than thiet",
+            "nhom khach si",
+            "nhom khach le",
+            "nhom khach than thiet",
+            "khach nhom si",
+            "khach nhom le",
+            "khach nhom than thiet",
+            "khach si",
+            "khach le",
+        ):
             group = (
                 "sỉ"
                 if _has(t, "nhom si")
@@ -808,7 +849,7 @@ class BaselineRouter:
                     )
 
         # Customer counts by number of orders.
-        threshold = re.search(r"(?:tu|it nhat)\s*(\d{1,3})\s*don", raw)
+        threshold = re.search(r"(?:tu|it nhat)\s*(\d{1,3})\s*(?:don|dh|ddown)", raw)
         if threshold and _has(t, "khach"):
             minimum = int(threshold.group(1))
             if (
@@ -832,7 +873,16 @@ class BaselineRouter:
                     plan="customers_with_orders",
                 )
         if _has(t, "khach") and _has(
-            t, "mua nhieu don nhat", "nhieu don nhat", "mua nhieu don"
+            t,
+            "mua nhieu don nhat",
+            "nhieu don nhat",
+            "mua nhieu don",
+            "mua nhieu lan nhat",
+            "nhieu lan nhat",
+            "mua nhiu don nhat",
+            "nhiu don nhat",
+            "mua nhiu don",
+            "nhiu don",
         ):
             top = ds.top_customer_orders(period, k=1)
             if top:
@@ -1025,8 +1075,19 @@ class BaselineRouter:
                 return Answer("abstain", plan="percent_or_comparison")
 
         # Threshold counts: orders or days whose revenue passes a floor.
+        # Money words include "đồng" and bare "bán được": ledgers phrase the
+        # floor as "... bán được từ 39.000.000 đồng trở lên".
         if (
-            _has(t, "doanh thu", "dthu", "tien hang", "tien ban")
+            _has(
+                t,
+                "doanh thu",
+                "dthu",
+                "tien hang",
+                "tien ban",
+                "dong",
+                "ban duoc",
+                "thu ve",
+            )
             and not _has(t, "nhap hang")
             and (
                 _words(t, "tu", "tren", "duoi", "hon", "qua")
@@ -1057,8 +1118,8 @@ class BaselineRouter:
         if _has(t, "liet ke") and not _has(t, "ban chay", "ban nhieu", "hot nhat"):
             return Answer("abstain", plan="list_other")
 
-        # 1. "Ngày nào / tháng nào ... cao nhất" -> date.
-        if _has(t, "ngay nao") and _has(
+        # 1. "Ngày nào / tháng nào / hôm nào ... cao nhất" -> date.
+        if _has(t, "ngay nao", "hom nao") and _has(
             t,
             "cao nhat",
             "nhieu nhat",
@@ -1178,6 +1239,13 @@ class BaselineRouter:
                 )
 
         # 2e. Special rankings from the public rulebook (§3).
+        # Habitual peak hour ("thường đông khách nhất vào mấy giờ") has no
+        # period; use the whole ledger.
+        if period is None and _has(t, "gio cao diem", "cao diem", "dong khach"):
+            hour = ds.peak_hour(None)
+            if hour is not None:
+                return Answer("number", hour, confidence=0.7, plan="peak_hour")
+            return Answer("abstain", plan="peak_hour")
         if period is not None:
             if _has(t, "trung thanh") and _has(t, "khach"):
                 top = ds.top_customers_days(period)
@@ -1218,7 +1286,7 @@ class BaselineRouter:
                         confidence=0.7,
                         plan="top_product_orders",
                     )
-            if _has(t, "gio cao diem", "cao diem"):
+            if _has(t, "gio cao diem", "cao diem", "dong khach"):
                 hour = ds.peak_hour(period)
                 if hour is not None:
                     return Answer("number", hour, confidence=0.7, plan="peak_hour")
@@ -1256,6 +1324,11 @@ class BaselineRouter:
             "khach mua cao nhat",
             "chi tieu nhieu nhat",
             "chi tieu nhiu nhat",
+            "chi nhieu tien nhat",
+            "chi nhiu tien nhat",
+            "khach chi nhieu",
+            "khach chi nhiu",
+            "chi nhieu nhat",
             "3 khach",
         ) and not _has(t, "cong no", "no "):
             if period is None:
@@ -1429,7 +1502,7 @@ class BaselineRouter:
         ) or (
             _has(t, "chan")
             and _words(t, "le")
-            and (_words(t, "con") or _has(t, "ton", "kho", "cuoi ngay", "hom nay"))
+            and (_words(t, "con", "ton") or _has(t, "kho", "cuoi ngay", "hom nay"))
             and not _has(t, "khach")
         ):
             stock_product = _match_inventory(question, ds)
@@ -1668,7 +1741,6 @@ class BaselineRouter:
                 "doanh thu",
                 "dthu",
                 "gia",
-                "ton",
                 "trong kho",
                 "con lai",
                 "don hang",
@@ -1678,6 +1750,8 @@ class BaselineRouter:
                 "hoa don",
                 "bill",
             )
+            # "ton" needs a word boundary: "tổng cộng" contains it.
+            and not _words(t, "ton")
             and not (_words(t, "xe") and _words(t, "chan") and _words(t, "le"))
         ):
             from .verifier import match_unit
@@ -1910,7 +1984,8 @@ class BaselineRouter:
             period is not None
             and _has(t, "luot", "phieu")
             and _has(t, "bao nhieu", "may", "bnhiu", "nhiu", "nhieu")
-            and not _has(t, "nhan vien", "nv ", "ton", "trong kho", "con lai")
+            and not _has(t, "nhan vien", "nv ", "trong kho", "con lai")
+            and not _words(t, "ton")
             and not _words(t, "le", "chan")
         ):
             service = _match_service(question, ds)
@@ -1963,6 +2038,8 @@ class BaselineRouter:
             "cao nhat",
             "nhieu nhat",
             "lon nhat",
+            "chinh",
+            "uy tin",
         ):
             if period is not None:
                 supplier = ds.top_supplier(period)
@@ -1975,7 +2052,7 @@ class BaselineRouter:
                     )
 
         # 7c. Trade-in, paid and warranty ledgers.
-        if _has(t, "thu may cu") and _has(
+        if _has(t, "thu may cu", "thu mua may cu", "mua may cu") and _has(
             t, "bao nhieu", "bnhiu", "may", "tien", "tong", "cong"
         ):
             value = (
@@ -2181,6 +2258,8 @@ class BaselineRouter:
             "bnhiu tien",
             "bn tien",
             "bnhieu tien",
+            "bao nhieu tien",
+            "bao nhiu tien",
         ) or (
             _has(t, "ban duoc", "ban dc", "ban ra")
             and _has(t, "bao nhieu tien", "bao nhiu tien", "bnhiu tien", "bn tien")

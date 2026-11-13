@@ -137,13 +137,39 @@ def _parse_month_year(text: str, today: date) -> tuple[int, int] | None:
 
 
 def extract_month_refs(text: str, today: date) -> list[tuple[int, int]]:
-    """Find all month references such as '4/2026', 'tháng 5/2026'."""
-    refs: list[tuple[int, int]] = []
-    for m in re.finditer(r"(?:thang\s*)?(\d{1,2})\s*/\s*(\d{4})", text):
-        month, year = int(m.group(1)), int(m.group(2))
+    """Find all month references such as '4/2026', 'tháng 5/2026'.
+
+    Also accepts dash separators ('11-2025'), 2-digit years ('2/26'),
+    and bare 'tháng X' mentions, which take the year of the nearest dated
+    reference in the same string (question lists like 'th8, th9, th10/2025').
+    """
+    dated: list[tuple[int, int, int]] = []  # (pos, year, month)
+    spans: list[tuple[int, int]] = []
+    for m in re.finditer(r"(?:thang\s*)?(\d{1,2})\s*[/\-]\s*(\d{4}|\d{2})(?!\d)", text):
+        month, year_raw = int(m.group(1)), m.group(2)
+        year = int(year_raw) if len(year_raw) == 4 else 2000 + int(year_raw)
         if 1 <= month <= 12:
-            refs.append((year, month))
-    return refs
+            dated.append((m.start(), year, month))
+            spans.append((m.start(), m.end()))
+    ordered: list[tuple[int, tuple[int, int]]] = [
+        (pos, (year, month)) for pos, year, month in dated
+    ]
+    for m in re.finditer(r"th(?:ang)?\s*(\d{1,2})(?![\d\s]*[/\-])", text):
+        month = int(m.group(1))
+        if not 1 <= month <= 12:
+            continue
+        # Skip months already inside a dated reference span.
+        if any(start <= m.start() < end for start, end in spans):
+            continue
+        if dated:
+            year = min(dated, key=lambda item: abs(item[0] - m.start()))[1]
+        else:
+            year = today.year
+            if date(year, month, 1) > today:
+                year -= 1
+        ordered.append((m.start(), (year, month)))
+    ordered.sort(key=lambda item: item[0])
+    return [ym for _, ym in ordered]
 
 
 def resolve_period(text: str, as_of: date) -> Period | None:

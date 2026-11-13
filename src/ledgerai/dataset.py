@@ -541,6 +541,37 @@ class Dataset:
                 df[cols["note"]].astype(str).str.strip() if cols.get("note") else ""
             )
             frames.append(out)
+        # Phone shops record the trade-in credit per sales line ("thu_may_cu")
+        # instead of a separate trade-in table. Harvest those columns too.
+        for table in tables:
+            if roles[id(table)] == "tradeins":
+                continue
+            cols = profiles[id(table)].roles
+            df = table.df
+            trade_col = next(
+                (
+                    c
+                    for c in df.columns
+                    if "thu may cu" in norm_key(str(c))
+                    or norm_key(str(c)) in {"thu cu", "tien thu cu"}
+                ),
+                None,
+            )
+            if trade_col is None:
+                continue
+            date_col = cols.get("date")
+            if not date_col or date_col not in df.columns:
+                continue
+            out = pd.DataFrame(index=df.index)
+            out["date"] = _to_date(df[date_col])
+            out["amount"] = _to_num(df[trade_col])
+            out["customer"] = (
+                df[cols["customer"]].astype(str).str.strip()
+                if cols.get("customer")
+                else ""
+            )
+            out["note"] = ""
+            frames.append(out)
         if not frames:
             return pd.DataFrame(columns=["date", "amount", "customer", "note"])
         return pd.concat(frames, ignore_index=True)
