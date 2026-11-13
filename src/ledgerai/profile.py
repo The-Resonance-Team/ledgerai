@@ -34,6 +34,8 @@ _ROLE_HINTS: list[tuple[str, tuple[str, ...]]] = [
             "ma phieu",
             "ma chung tu",
             "so chung tu",
+            "ma gd",
+            "ma giao dich",
         ),
     ),
     ("purchase_id", ("ma phieu nhap", "ma nhap", "purchase_id", "so phieu nhap")),
@@ -58,7 +60,20 @@ _ROLE_HINTS: list[tuple[str, tuple[str, ...]]] = [
     ("supplier_id", ("ma nha cung cap", "ma ncc", "supplier_id")),
     ("employee_id", ("ma nhan vien", "ma nv", "employee_id")),
     ("date", ("ngay", "thoi gian", "date", "created_at", "created", "transaction")),
-    ("status", ("trang thai", "status", "ket qua", "tinh trang", "xu ly", "ghi chu tt", "ghi chu trang thai")),
+    (
+        "status",
+        (
+            "tien do",
+            "tt don",
+            "trang thai",
+            "status",
+            "ket qua",
+            "tinh trang",
+            "xu ly",
+            "ghi chu tt",
+            "ghi chu trang thai",
+        ),
+    ),
     ("channel", ("kenh ban", "kenh", "channel", "hinh thuc ban", "nguon")),
     ("paid", ("da tra", "da thanh toan", "khach da tra", "khach tra", "paid")),
     (
@@ -68,6 +83,9 @@ _ROLE_HINTS: list[tuple[str, tuple[str, ...]]] = [
             "phuong thuc thanh toan",
             "phuong thuc",
             "cach thanh toan",
+            "thanh toan bang",
+            "tra bang",
+            "hinh thuc tra",
             "loai tt",
             "pttt",
         ),
@@ -103,9 +121,12 @@ _ROLE_HINTS: list[tuple[str, tuple[str, ...]]] = [
         "base_quantity",
         ("quy doi", "quy ra", "so luong le", "sl ban", "so luong co ban"),
     ),
-    ("quantity", ("so luong", "quy ra", "quantity", "sl", "qty")),
+    ("quantity", ("so luong", "quy ra", "quantity", "sl", "sluong", "qty")),
     ("unit", ("don vi", "unit", "dvt")),
-    ("category", ("nhom hang", "loai hang", "loai san pham", "nhom", "danh muc", "category")),
+    (
+        "category",
+        ("nhom hang", "loai hang", "loai san pham", "nhom", "danh muc", "category"),
+    ),
     (
         "product",
         (
@@ -190,11 +211,45 @@ def _hint_role(name: str, series: pd.Series) -> str:
     # "nhóm hàng hóa" is a category, not a product name.
     if "nhom hang" in key or key.startswith("nhom"):
         return "category"
-    if key == "tien" or key == "tt":
+    if key == "tien" or key == "tt" or key == "cong":
         return "amount"
+    # A bare "Thanh toán" column is the amount paid, not the payment method.
+    if key in {"thanh toan", "tien thanh toan", "so tien thanh toan"}:
+        return "paid"
+    # A bare "Tổng" column is the order total.
+    if key == "tong":
+        return "total"
+    # A bare "quy đổi" column in a unit table is the pack factor (units per
+    # pack), not a base quantity. Longer names ("số lượng quy đổi") stay
+    # base_quantity via the hint table below.
+    if key == "quy doi":
+        return "factor"
+    # Exact *_id columns must win over generic hints: "customer_id"
+    # otherwise matches the "customer" hint first (underscore is a boundary).
+    if key in {
+        "order_id",
+        "customer_id",
+        "product_id",
+        "employee_id",
+        "supplier_id",
+        "purchase_id",
+    }:
+        return key
+    # Short product keys used by several ledgers.
+    if key == "ma hh":
+        return "product_id"
+    if key == "ma vach":
+        # "Mã vạch" is the SKU in some files and an EAN barcode in others.
+        sample = series.astype(str).str.strip().replace("", pd.NA).dropna()
+        if len(sample) and sample.str.fullmatch(r"\d{8,14}").mean() < 0.8:
+            return "product_id"
     unique = series.replace("", pd.NA).dropna().nunique()
+    money_prefix = re.compile(r"^(?:tong|tien|thanh|gia|phai|con|du)(?![a-z0-9])")
     for role, hints in _ROLE_HINTS:
         if any(_matches_hint(key, h) for h in hints):
+            # "Tổng bill", "Tiền ..." are money, never an order code.
+            if role == "order_id" and money_prefix.match(key):
+                continue
             # A product hint on a low-cardinality flag column is a false positive.
             if role == "product" and unique <= 3:
                 continue
@@ -233,6 +288,11 @@ def profile_table(table: Table, max_sample: int = 5) -> TableProfile:
         role = _hint_role(col, series)
         kind = _kind(series, role)
         nonnull = series.replace("", pd.NA).dropna()
+        # An empty column must never claim a role. Files often carry an empty
+        # "Trạng thái HĐĐT" beside the real status column ("Tiến độ", "TT đơn").
+        if len(nonnull) == 0:
+            role = "other"
+            kind = "text"
         col_profile = ColumnProfile(
             name=col,
             role=role,
@@ -300,9 +360,11 @@ def infer_table_role(table: TableProfile) -> str:
     if (
         "ti le quy doi" in column_keys
         or "he so quy doi" in column_keys
+        or "factor" in roles
         or ("quy" in words and "doi" in words and "product" in roles)
     ):
-        return "conversions"
+        if "product_id" in roles or "product" in roles:
+            return "conversions"
     if (
         any("ton cuoi" in key for key in column_keys)
         and ("kho" in words or "ton" in words)
@@ -319,7 +381,16 @@ def infer_table_role(table: TableProfile) -> str:
         return "warranty"
     if "chi phi" in name or "expense" in name:
         return "expenses"
-    if "thanh toan" in name or "payment" in name or "tra no" in name:
+    if (
+        "thanh toan" in name
+        or "payment" in name
+        or "tra no" in name
+        or "phieu thu" in name
+        or "thu tien" in name
+        or "receipt" in name
+        or "so quy" in name
+        or "cash book" in name
+    ):
         return "payments"
     if "san pham" in name or "thuoc" in name or "product" in name or "danh muc" in name:
         return "products"
@@ -333,7 +404,9 @@ def infer_table_role(table: TableProfile) -> str:
         return "order_lines"
     if "product" in roles and "category" in roles:
         return "products"
-    if "order_id" in roles and ("amount" in roles or "total" in roles):
+    if "order_id" in roles and (
+        "amount" in roles or "total" in roles or "paid" in roles or "debt" in roles
+    ):
         return "orders"
     if "date" in roles and "amount" in roles:
         return "orders"

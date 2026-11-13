@@ -80,7 +80,9 @@ def main() -> None:
         gold = answers[q["id"]]
         verdict = compare(answer.to_json(q["id"]), gold)
         verdicts.append(verdict)
-        preds.append(answer.to_json(q["id"]))
+        record = answer.to_json(q["id"])
+        record["plan"] = answer.plan
+        preds.append(record)
         by_type[gold["type"]].append(verdict)
         by_family[_family(q["question"])].append(verdict)
         plan_counts[answer.plan] += 1

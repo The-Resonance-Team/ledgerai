@@ -119,12 +119,21 @@ def resolve_period(text: str, as_of: date) -> Period | None:
     t = re.sub(r"\btuan trc\b|\btuan truoc\b|\btuan roi\b", "tuan truoc", t)
     t = re.sub(r"\bthang trc\b|\bthang roi\b", "thang truoc", t)
     t = re.sub(r"\bthangs\b|\bthangf\b", "thang", t)
+    t = re.sub(r"\bnawm\b|\bnamf\b", "nam", t)
     t = re.sub(r"\bbua nay\b|\bhom ni\b|\bhnay\b", "hom nay", t)
     t = re.sub(r"\bthang ni\b", "thang nay", t)
     t = re.sub(r"\bth\s+nay\b", "thang nay", t)
     t = re.sub(r"\bth\s+truoc\b|\bth\s+roi\b", "thang truoc", t)
     t = re.sub(r"\bnam ni\b", "nam nay", t)
     today = as_of
+
+    # "Từ đầu tháng (này) đến hết hôm nay" is month-to-date, not today.
+    if re.search(
+        r"tu\s+(?:dau thang(?: nay)?|mung 1 thang(?: nay)?|ngay 1 thang(?: nay)?)"
+        r".*(?:den|toi)\s+(?:het\s+)?(?:hom nay|hnay|bay gio)",
+        t,
+    ):
+        return Period(date(today.year, today.month, 1), today, "từ đầu tháng")
 
     # Range "tu X den Y" / "tu X qua Y". Must run before "hom nay" so that
     # "tu ngay 1/1 den het hom nay" keeps both ends.
