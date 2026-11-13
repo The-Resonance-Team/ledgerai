@@ -1577,7 +1577,11 @@ class Dataset:
             ingredient_col = None
             for candidate in df.columns:
                 key = norm_key(candidate)
-                if "thuoc ke don" in key or "ke don" in key or "ban theo don" in key:
+                if (
+                    "thuoc ke don" in key
+                    or "ke don" in key
+                    or ("ban theo don" in key and "don vi" not in key)
+                ):
                     prescription_col = candidate
                 if "hoat chat" in key or "thanh phan" in key:
                     ingredient_col = candidate
@@ -3221,8 +3225,21 @@ class Dataset:
         if df["channel"].astype(str).str.strip().eq("").all():
             return None
         key = norm_key(keyword)
-        df = df[df["channel"].map(norm_key).str.contains(key, na=False)]
-        return float(df["revenue"].sum())
+        matched = df[df["channel"].map(norm_key).str.contains(key, na=False)]
+        if matched.empty:
+            return None
+        # Rulebook §1: revenue is the sum of line amounts.
+        if len(self.lines):
+            ids = set(matched["order_id"])
+            lines = self.lines[
+                self.lines["order_id"].isin(ids)
+                & ~self.lines["status"].isin(["cancelled", "returned"])
+            ]
+            if period is not None:
+                lines = lines[lines["date"].apply(period.contains)]
+            if not lines.empty:
+                return float(lines["line_amount"].sum())
+        return float(matched["revenue"].sum())
 
     def channel_share(self, period: Period | None, keyword: str) -> float | None:
         total = self.revenue(period)

@@ -56,7 +56,7 @@ _ROLE_HINTS: list[tuple[str, tuple[str, ...]]] = [
             "sku",
         ),
     ),
-    ("customer_id", ("ma khach", "ma kh", "customer_id")),
+    ("customer_id", ("ma khach", "ma kh", "so kh", "customer_id")),
     ("supplier_id", ("ma nha cung cap", "ma ncc", "supplier_id")),
     ("employee_id", ("ma nhan vien", "ma nv", "employee_id")),
     ("date", ("ngay", "thoi gian", "date", "created_at", "created", "transaction")),

@@ -300,8 +300,10 @@ class BaselineRouter:
         raw = re.sub(r"\b(treen)\b", "tren", raw)
         raw = re.sub(r"\b(thangs)\b", "thang", raw)
         raw = re.sub(r"\b(quys)\b", "quy", raw)
-        raw = re.sub(r"\b(nhaats|nhut|nhuts)\b", "nhat", raw)
+        raw = re.sub(r"\b(nhaats|nhut|nhuts|nhatf)\b", "nhat", raw)
         raw = re.sub(r"\b(nhta)\b", "nhat", raw)
+        raw = re.sub(r"\b(ngayf)\b", "ngay", raw)
+        raw = re.sub(r"\b(nhaapj|nhaap|nhapf|nhaapj)\b", "nhap", raw)
         raw = re.sub(r"\b(quaan)\b", "quan", raw)
         raw = re.sub(r"\b(mooix)\b", "moi", raw)
         raw = re.sub(r"\b(leen)\b", "len", raw)
@@ -667,6 +669,8 @@ class BaselineRouter:
                 "tung ben",
                 "tung hinh thuc",
                 "moi hinh thuc",
+                " va ",
+                "lan luot",
             )
         ):
             # The reference lists values in the order the methods appear in
@@ -1793,6 +1797,7 @@ class BaselineRouter:
         ) and not (
             _has(t, "gia tri", "gia von", "nhap", "don vi lon", "hop chan", "le")
             or _words(t, "ban")
+            or _has(t, "gan het han", "het han", "han dung", "hsd", "can date")
         ):
             stock_product = _match_inventory(question, ds)
             if stock_product:
@@ -2558,7 +2563,7 @@ class BaselineRouter:
         # 6c. Employee revenue, ticket counts and top seller.
         if period is not None:
             is_employee_q = (
-                _has(t, "nhan vien", "nv ")
+                _has(t, "nhan vien", "nv ", "nguoi ban")
                 or _words(t, "tho")
                 or re.search(r"\bnv\s*0*\d+", t) is not None
             )
