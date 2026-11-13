@@ -285,6 +285,7 @@ class BaselineRouter:
         raw = re.sub(r"\b(ddown)\b", "don", raw)
         raw = re.sub(r"\b(nhoms)\b", "nhom", raw)
         raw = re.sub(r"\b(khachs)\b", "khach", raw)
+        raw = re.sub(r"\b(huyr|huyf)\b", "huy", raw)
         t = norm_key(raw)
         period = resolve_period(raw, as_of) if _has_period(raw) else None
         k = _count_k(t)
@@ -488,16 +489,9 @@ class BaselineRouter:
             ("cod", "thu ho"),
             ("ghi no", "debt", "cong no"),
         ):
-            found = False
-            for needle in needles:
-                if len(needle) <= 3:
-                    if _words(t, needle):
-                        found = True
-                        break
-                elif needle in t:
-                    found = True
-                    break
-            if found:
+            # Word boundaries for every needle: "thu ho" is a substring
+            # of "doanh thu hom nay", and "the" of many unrelated words.
+            if any(_words(t, needle) for needle in needles):
                 payment_methods.append(needles)
         payment_keyword = payment_methods[0][0] if payment_methods else None
         if (
@@ -508,7 +502,13 @@ class BaselineRouter:
             # The reference lists values in the order the methods appear in
             # the question, not in a canonical method order.
             def first_pos(needles: tuple[str, ...]) -> int:
-                positions = [t.find(needle) for needle in needles if needle in t]
+                positions = [
+                    match.start()
+                    for needle in needles
+                    for match in re.finditer(
+                        rf"(?<![a-z0-9]){re.escape(needle)}(?![a-z0-9])", t
+                    )
+                ]
                 return min(positions) if positions else 10**9
 
             values = []
