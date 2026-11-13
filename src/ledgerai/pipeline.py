@@ -2779,7 +2779,9 @@ class BaselineRouter:
             )
 
         # 9. Order count.
-        # "o do" (order) is the Southern pronunciation spelling.
+        # "o do" (order) is the Southern pronunciation spelling, and "dh"
+        # abbreviates don hang. Both must be word-boundary matched: plain
+        # substring matches inside "co doanh" (revenue) and "DHG" (brand).
         if _has(
             t,
             "so don",
@@ -2790,13 +2792,9 @@ class BaselineRouter:
             "nhieu don",
             "nhiu don",
             "ddown",
-            "dh",
             "so luong don",
             "so hoa don",
-            "bao nhieu o do",
-            "may o do",
-            "o do",
-        ):
+        ) or _words(t, "dh", "bao nhieu o do", "may o do", "o do"):
             if period is None:
                 return Answer("abstain", plan="order_count")
             if _has(t, *_FILTER_WORDS) or _has(
