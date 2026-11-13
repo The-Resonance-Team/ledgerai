@@ -604,9 +604,7 @@ class BaselineRouter:
                         confidence=0.75,
                         plan="top_product_profit",
                     )
-            if _has(
-                t, "lai rong", "loi that", "lai that", "tru chi phi", "trừ chi phí"
-            ):
+            if _has(t, "lai rong", "nhuan rong", "loi that", "lai that", "tru chi phi"):
                 value = ds.net_profit(period)
             else:
                 value = ds.gross_profit(period)

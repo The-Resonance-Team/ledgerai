@@ -4113,7 +4113,31 @@ class Dataset:
         denom = amount.where(amount > 0, float("nan"))
         k = (qty * price / denom).fillna(1.0)
         bulk = (k >= 2.5) & (price > 0) & (amount > 0) & (qty > 0)
-        corrected = (amount * cost / price.where(price > 0)).fillna(0.0)
+        k_final = k
+        if bulk.any() and "product" in df.columns:
+            # One discounted bulk row can round to the wrong factor
+            # (25.2 instead of 24). The product's modal factor wins.
+            rounded = (k[bulk] + 0.5).astype(int)
+            counts: dict[tuple[str, int], int] = {}
+            modes: dict[str, int] = {}
+            for name, value in zip(df.loc[bulk, "product"], rounded):
+                key = norm_key(name)
+                counts[(key, value)] = counts.get((key, value), 0) + 1
+                if counts[(key, value)] >= 3 and (
+                    key not in modes or counts[(key, value)] > counts[(key, modes[key])]
+                ):
+                    modes[key] = value
+            if modes:
+                modal = df["product"].map(norm_key).map(modes)
+                use_modal = (
+                    bulk
+                    & modal.notna()
+                    & (modal >= 2.5)
+                    & ((k - modal).abs() <= 0.15 * modal)
+                )
+                k_final = k.where(~use_modal, modal)
+        safe_k = k_final.where((k_final > 0) & bulk, 1.0)
+        corrected = (qty * cost / safe_k).fillna(0.0)
         return raw.where(~bulk, corrected)
 
     def gross_profit(self, period: Period | None = None) -> float | None:
