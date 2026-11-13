@@ -434,7 +434,16 @@ class BaselineRouter:
                     )
 
         # Category share of revenue, e.g. "nhóm điện chiếm bao nhiêu %".
-        if _has(t, "chiem", "ti trong", "dong gop") and period is not None:
+        # Customer tiers ("nhóm sỉ/lẻ/thân thiết" + khách) belong to the
+        # customer-group branch below, not to product categories.
+        if (
+            _has(t, "chiem", "ti trong", "dong gop")
+            and period is not None
+            and not (
+                _has(t, "khach", "khach hang")
+                and _has(t, "nhom si", "nhom le", "nhom than thiet")
+            )
+        ):
             from .verifier import match_category
 
             category = match_category(question, ds)
@@ -690,6 +699,19 @@ class BaselineRouter:
                 if _has(t, "nhom si")
                 else ("thân thiết" if _has(t, "nhom than thiet") else "lẻ")
             )
+            # A group the ledger never uses makes the question unanswerable
+            # (train gold precedent: no "thân thiết" tier in that shop).
+            known_groups = set()
+            if not ds.customers.empty and "group" in ds.customers.columns:
+                known_groups.update(ds.customers["group"].map(norm_key).unique())
+            if "customer_group" in ds.orders.columns:
+                known_groups.update(
+                    key
+                    for key in ds.orders["customer_group"].map(norm_key).unique()
+                    if key
+                )
+            if norm_key(group) not in known_groups:
+                return Answer("unanswerable", plan="customer_group_unknown")
             part = ds.revenue_filtered(period, customer_group=group)
             if _has(t, "ti trong", "phan tram", "chiem") or "%" in raw:
                 total = ds.revenue(period)
@@ -707,6 +729,16 @@ class BaselineRouter:
                     confidence=0.8,
                     plan="revenue_customer_group",
                 )
+
+        # Return/cancel reasons ("vì lỗi", "vì mua nhầm", "bên nào nhiều
+        # hơn") are not recorded in the ledger (train gold: unanswerable).
+        # This check must run before any count branch: questions like "bên
+        # nào nhiều đơn hơn" contain no "bao nhiêu đơn" trigger.
+        if _has(t, "vi loi", "vi mua nham", "ly do tra", "nguyen nhan tra") or (
+            _has(t, "tra hang", "tra lai", "doi tra", "huy don")
+            and _has(t, "ben nao", "loai nao", "nhieu hon", "so sanh", "vi ")
+        ):
+            return Answer("unanswerable", plan="return_reason_unknown")
 
         # Order counts filtered by category or status.
         if _has(t, "bao nhieu don", "may don", "so don", "bn don", "bao nhieu bill"):
@@ -1488,6 +1520,24 @@ class BaselineRouter:
                     _round_money(value),
                     confidence=0.8,
                     plan="revenue_product",
+                )
+            # "Còn bao nhiêu" asks what REMAINS (stock), not what sold.
+            # With no inventory ledger the question is unanswerable.
+            if (
+                _has(t, "con")
+                and not _has(t, "ban duoc", "ban ra", "ban dc", "ban chay", "ban nhieu")
+                and not _has(t, "no", "cong no", "tra no", "thu no")
+            ):
+                if ds.inventory is None or ds.inventory.empty:
+                    return Answer("unanswerable", plan="stock_no_inventory")
+                value = ds.stock(product)
+                if value is None:
+                    return Answer("unanswerable", plan="stock_unknown_product")
+                return Answer(
+                    "number",
+                    _round_money(value),
+                    confidence=0.8,
+                    plan="stock_on_hand",
                 )
             quantity_words = _has(
                 t, "ban duoc", "ban ra", "ban dc", "may ", "bao nhieu", "so luong"
