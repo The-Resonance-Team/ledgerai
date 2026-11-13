@@ -331,6 +331,39 @@ class BaselineRouter:
             ):
                 return Answer("unanswerable", plan="outside_data_range")
 
+        # Unanswerable: the question needs data the ledger provably lacks.
+        # Each rule checks data presence, so shops that DO record the field
+        # keep flowing to their answer branch below.
+        if _has(t, "khach nam", "khach nu") and not ds.has_gender_data():
+            return Answer("unanswerable", plan="gender_no_data")
+        if (
+            (_has(t, "voucher", "chiet khau") or (_has(t, "giam") and _has(t, "khach")))
+            and _has(t, "bao nhieu", "bnhiu", "tien", "het", "tong")
+            and not (
+                _has(t, "doi gia", "tang gia", "len gia", "giam gia")
+                and _has(t, "ngay", "san pham", "mat hang", "thuoc", "mon")
+            )
+        ):
+            if not ds.has_voucher_data():
+                return Answer("unanswerable", plan="voucher_no_data")
+        if (
+            _has(t, "phi ship", "tien ship", "cuoc ship", "phi van chuyen")
+            and _has(t, "bao nhieu", "bnhiu", "tien", "tong")
+            and not ds.has_shipping_data()
+        ):
+            return Answer("unanswerable", plan="shipping_no_data")
+        if (
+            _has(t, "khach o", "o duong", "dia chi")
+            and _has(t, "mua", "tien", "doanh thu", "dthu")
+            and not ds.has_address_data()
+        ):
+            return Answer("unanswerable", plan="address_no_data")
+        if (
+            _has(t, "chat luong tot nhat", "trung thuc nhat", "than thien nhat")
+            and not ds.has_rating_data()
+        ):
+            return Answer("unanswerable", plan="subjective_no_data")
+
         # Boolean revenue trend over consecutive months.
         if _has(t, "tang lien tuc", "luon cao hon", "co tang lien tuc") and _has(
             t, "doanh thu", "dthu"
@@ -378,7 +411,13 @@ class BaselineRouter:
             "cao hon",
             "thap hon",
         )
-        if growth_language and not _has(t, "ca sang", "ca chieu"):
+        if (
+            growth_language
+            and not _has(t, "ca sang", "ca chieu")
+            and not _has(
+                t, "doi gia", "tang gia", "len gia", "giam gia", "thay doi gia"
+            )
+        ):
             asks_percent = _has(raw, "%", "phan tram") or bool(
                 re.search(r"(?:bao nhieu|bao nhiu|bnhiu|may|mi|bn|nhiu|nhieu)\s*%", raw)
             )
@@ -486,6 +525,24 @@ class BaselineRouter:
                         confidence=0.8,
                         plan="category_revenue_share",
                     )
+            # Group fallback: "nhóm X" / brand families without a master
+            # category ("Bỉm Bobby ... tổng số bịch bỉm", "máy Samsung ...").
+            group = ds.group_from_question(question)
+            if group:
+                part = ds.revenue_group(period, group)
+                num_set = set(group)
+                denom = ds.superset_group(question, num_set)
+                total = ds.revenue_group(period, denom) if denom else None
+                if total is None and _has(t, "doanh thu", "dthu", "tong"):
+                    total = ds.revenue(period)
+                if part is not None and total:
+                    return Answer(
+                        "percent",
+                        round(100.0 * float(part) / float(total), 2),
+                        confidence=0.7,
+                        plan="group_revenue_share",
+                    )
+                return Answer("abstain", plan="group_revenue_share")
 
         # Profit and expenses.
         if period is not None and _has(
@@ -722,6 +779,30 @@ class BaselineRouter:
                         plan="revenue_ingredient",
                     )
 
+        # Revenue / share by customer gender. No-data ledgers are answered
+        # unanswerable by the early gender_no_data rule above.
+        if period is not None and _has(t, "khach nam", "khach nu"):
+            want = "nam" if _has(t, "khach nam") else "nu"
+            value = ds.revenue_gender(period, want)
+            if value is None:
+                return Answer("abstain", plan="revenue_gender")
+            if _has(t, "chiem", "ti trong", "phan tram", "dong gop") or "%" in raw:
+                total = ds.revenue(period)
+                if total > 0:
+                    return Answer(
+                        "percent",
+                        round(100.0 * value / total, 2),
+                        confidence=0.75,
+                        plan="revenue_gender_share",
+                    )
+                return Answer("abstain", plan="revenue_gender_share")
+            return Answer(
+                "number",
+                _round_money(value),
+                confidence=0.75,
+                plan="revenue_gender",
+            )
+
         # Revenue of a customer group (sỉ / lẻ / thân thiết).
         if period is not None and _words(
             t,
@@ -738,9 +819,24 @@ class BaselineRouter:
             "khach le",
         ):
             group = (
-                "sỉ"
-                if _has(t, "nhom si")
-                else ("thân thiết" if _has(t, "nhom than thiet") else "lẻ")
+                "thân thiết"
+                if _has(
+                    t,
+                    "nhom than thiet",
+                    "nhom khach than thiet",
+                    "khach nhom than thiet",
+                )
+                else (
+                    "sỉ"
+                    if _has(
+                        t,
+                        "nhom si",
+                        "nhom khach si",
+                        "khach nhom si",
+                        "khach si",
+                    )
+                    else "lẻ"
+                )
             )
             # A group the ledger never uses makes the question unanswerable
             # (train gold precedent: no "thân thiết" tier in that shop).
@@ -942,10 +1038,11 @@ class BaselineRouter:
 
         # Rulebook §5 price-change effect: compare the N days from the price
         # change with the N days immediately before it, in base units.
+        # Train gold answers PERCENT even when phrased as an alternative
+        # ("tăng hay giảm", "nhiều hơn hay ít hơn") with no % sign.
         if (
             _has(t, "doi gia", "tang gia", "len gia", "giam gia", "thay doi gia")
             and _has(t, "ngay", "ke tu")
-            and _has(raw, "%", "phan tram", "may phan tram", "bao nhieu phan tram")
             and not _has(t, "voucher", "chiet khau")
         ):
             from .verifier import match_product
@@ -982,8 +1079,15 @@ class BaselineRouter:
         # Percent / comparison questions need a comparison metric; the revenue
         # gap makes them unreliable, so abstain instead of risking -1.
         # Cancellation-rate questions also ask for a percentage and are handled below.
-        if not (_words(t, "huy") and _has(t, "don", "dh")) and not _has(
-            t, "ca sang", "ca chieu"
+        # Phone-condition shares ("máy mới % tiền bán máy") are handled by
+        # the 4a3 branch below, not here.
+        if (
+            not (_words(t, "huy") and _has(t, "don", "dh"))
+            and not _has(t, "ca sang", "ca chieu")
+            and not (
+                ds.product_conditions
+                and _has(t, "may moi", "may cu", "dien thoai", "phu kien")
+            )
         ):
             asks_percent = _has(t, "phan tram", "ti le", "ty le", "ti trong") or bool(
                 re.search(r"(?:bao nhieu|may|bn)\s*%", raw)
@@ -1300,6 +1404,28 @@ class BaselineRouter:
                     )
 
         # 3. Ranking customers.
+        # No customer linkage in the period: top-customer questions are
+        # unanswerable (gold cannot name a customer the ledger never links).
+        if (
+            period is not None
+            and _has(t, "khach", "khach hang")
+            and _has(t, "nhat", "dong gop")
+            and _has(
+                t,
+                "mua",
+                "chi",
+                "tieu",
+                "dong",
+                "trung thanh",
+                "no",
+                "nhieu",
+                "cao",
+                "thanh toan",
+                "tra",
+            )
+            and not ds.has_customer_linkage(period)
+        ):
+            return Answer("unanswerable", plan="customer_no_data")
         if _has(
             t,
             "khach mua nhieu nhat",
@@ -1598,6 +1724,114 @@ class BaselineRouter:
                     )
             return Answer("abstain", plan="delivered_quantity")
 
+        # 4a3. Phone shops: new/used/accessory conditions and model groups.
+        # The condition master tags every product; model families span rows
+        # ("iPhone 13" new + used) or storage variants ("A56" 128/256G).
+        if (ds.product_conditions) and period is not None:
+            wanted: set[str] = set()
+            if _has(t, "may moi"):
+                wanted.add("may moi")
+            if _has(t, "may cu") or _has(t, "dien thoai cu"):
+                wanted.add("may cu")
+            if _has(t, "phu kien"):
+                wanted.add("phu kien")
+            phone_group = ds.group_from_question(question)
+            if not phone_group and not wanted:
+                phone_brand = ds.brand_group_from_question(question)
+            else:
+                phone_brand = []
+            names: list[str] | None = phone_group or phone_brand or None
+            if names and wanted:
+                cond_of = ds.product_conditions or {}
+                names = [n for n in names if cond_of.get(norm_key(n)) in wanted]
+            if not names and not wanted and _has(t, "dien thoai"):
+                # Bare "điện thoại" means phones, not accessories.
+                wanted = {"may moi", "may cu"}
+            if names or wanted:
+                cond_all = {"may moi", "may cu"}
+                use_names = names if names else None
+                if _has(t, "chiem", "ti trong", "%") or _has(raw, "%"):
+                    money_share = _has(
+                        t, "tien", "doanh thu", "dthu", "thu ve", "tien ban"
+                    )
+                    if money_share:
+                        part = (
+                            ds.revenue_group(period, use_names)
+                            if use_names
+                            else ds.revenue_condition(period, wanted)
+                        )
+                        total = (
+                            ds.revenue_condition(period, cond_all)
+                            if _has(t, "may", "dien thoai")
+                            else ds.revenue(period)
+                        )
+                    else:
+                        part_q = (
+                            ds.quantity_group(period, use_names)
+                            if use_names
+                            else ds.quantity_condition(period, wanted)
+                        )
+                        total_q = (
+                            ds.quantity_condition(period, cond_all)
+                            if _has(t, "may", "dien thoai")
+                            else None
+                        )
+                        part, total = part_q, total_q
+                    if part is not None and total and float(total) > 0:
+                        return Answer(
+                            "percent",
+                            round(100.0 * float(part) / float(total), 2),
+                            confidence=0.7,
+                            plan="phone_condition_share",
+                        )
+                    return Answer("abstain", plan="phone_condition_share")
+                if _has(
+                    t,
+                    "bao nhieu",
+                    "bnhiu",
+                    "may ",
+                    "may chiec",
+                    "so luong",
+                    "sl ",
+                ) and not _has(t, "tien", "doanh thu", "dthu", "gia ", "thu ve"):
+                    qty = (
+                        ds.quantity_group(period, use_names)
+                        if use_names
+                        else ds.quantity_condition(period, wanted)
+                    )
+                    if qty is not None:
+                        return Answer(
+                            "number",
+                            _round_money(qty),
+                            confidence=0.75,
+                            plan="product_quantity",
+                        )
+                if _has(
+                    t,
+                    "doanh thu",
+                    "dthu",
+                    "thu ve",
+                    "tien ban",
+                    "ban duoc",
+                    "nhiu tien",
+                    "bnhiu tien",
+                    "bn tien",
+                    "tien",
+                ):
+                    rev = (
+                        ds.revenue_group(period, use_names)
+                        if use_names
+                        else ds.revenue_condition(period, wanted)
+                    )
+                    if rev:
+                        return Answer(
+                            "number",
+                            _round_money(rev),
+                            confidence=0.8,
+                            plan="revenue_product",
+                        )
+                    return Answer("abstain", plan="phone_condition_revenue")
+
         # 4b. Product-aware revenue and quantity.
         from .verifier import match_product
 
@@ -1731,6 +1965,50 @@ class BaselineRouter:
                         plan="product_quantity",
                     )
 
+        # 4b1. Product-group revenue / quantity ("iPhone 13", "Bỉm Bobby",
+        # "bỉm size XL"): the phrase spans rows, no single product matches.
+        # Skipped for top-N selections ("mặt hàng nào ... nhất", "top 3"):
+        # those need ranking branches, not totals.
+        if (
+            not product
+            and period is not None
+            and not (
+                _has(t, "mat hang nao", "mon nao", "hang nao", "sp nao")
+                and _has(t, "nhat")
+            )
+            and not (_has(t, "top", "liet ke", "danh sach") and _has(t, "nhat"))
+        ):
+            group = ds.group_from_question(question)
+            if group:
+                money_words = _has(
+                    t,
+                    "doanh thu",
+                    "dthu",
+                    "thu ve",
+                    "tien ban",
+                    "bao nhieu tien",
+                    "tien",
+                )
+                quantity_words = _has(
+                    t, "ban duoc", "ban ra", "ban dc", "may", "bao nhieu", "so luong"
+                )
+                if money_words and not quantity_words:
+                    return Answer(
+                        "number",
+                        _round_money(ds.revenue_group(period, group)),
+                        confidence=0.7,
+                        plan="revenue_product",
+                    )
+                if quantity_words:
+                    qty = ds.quantity_group(period, group)
+                    if qty is not None:
+                        return Answer(
+                            "number",
+                            _round_money(qty),
+                            confidence=0.7,
+                            plan="product_quantity",
+                        )
+
         # 4b2. Quantity by unit when no product is named.
         if (
             period is not None
@@ -1794,6 +2072,26 @@ class BaselineRouter:
                     confidence=0.8,
                     plan="revenue_category",
                 )
+            # Group fallback for brand/model families without a master
+            # category ("iPhone 13", "Cốc sạc nhanh 25W Samsung").
+            if not category and _has(
+                t,
+                "doanh thu",
+                "dthu",
+                "thu ve",
+                "tien ban",
+                "ban duoc",
+                "ban dc",
+                "tien",
+            ):
+                names = ds.group_from_question(question)
+                if names:
+                    return Answer(
+                        "number",
+                        _round_money(ds.revenue_group(period, names)),
+                        confidence=0.7,
+                        plan="revenue_product",
+                    )
 
         # 5. Growth / change percent: the baseline revenue gap makes this
         # unreliable, so abstain instead of risking -1.

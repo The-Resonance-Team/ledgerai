@@ -1673,7 +1673,7 @@ class Dataset:
         return matched
 
     def group_from_question(
-        self, question: str, min_words: int = 2, min_chars: int = 8
+        self, question: str, min_words: int = 2, min_chars: int = 7
     ) -> list[str]:
         """Canonical products sharing the longest word run with the question.
 
@@ -1760,10 +1760,71 @@ class Dataset:
         ]
         return sorted({name for name in (filtered or [n for _, n in group])})
 
+    def superset_group(self, question: str, names: set[str]) -> list[str] | None:
+        """Denominator for a share: the broad word in a "tổng số X" phrase.
+
+        For "... % tổng số bịch bỉm bán ra": "bim" matching all diapers
+        (names and aliases). Falls back to the broadest strict superset
+        word in the question when no "tổng số" phrase matches.
+        """
+        import re
+
+        q = norm_key(question)
+        stop = {
+            "thang",
+            "nam",
+            "tuan",
+            "ngay",
+            "hom",
+            "nay",
+            "truoc",
+            "nhat",
+            "may",
+            "chiec",
+            "ban",
+            "duoc",
+            "tong",
+            "bao",
+            "nhieu",
+            "bnhiu",
+            "tien",
+            "dthu",
+            "doanh",
+            "thu",
+            "cua",
+            "hang",
+            "tinh",
+            "so",
+            "chiem",
+            "phan",
+            "tram",
+            "chung",
+            "loai",
+            "moi",
+            "cu",
+            "ca",
+            "dang",
+            "cho",
+            "khach",
+            "cai",
+            "tat",
+            "gop",
+        }
+        m = re.search(r"tong\s+(?:so\s+)?([a-z ]+?)(?:\s+ban|\s+trong|$)", q)
+        if m:
+            best: list[str] | None = None
+            for word in dict.fromkeys(m.group(1).split()):
+                if len(word) < 3 or word in stop:
+                    continue
+                matched = self.products_matching(word)
+                if len(matched) >= 2 and (best is None or len(matched) > len(best)):
+                    best = matched
+            if best is not None:
+                return best
+        return None
+
     def brand_group_from_question(self, question: str) -> list[str]:
         """Products sharing one distinctive word (brand) with the question."""
-        from .verifier import _word_run  # noqa: F401 (kept local, symmetrical)
-
         q = norm_key(question)
         stop = {
             "thang",
@@ -1829,15 +1890,6 @@ class Dataset:
         metric = "base_quantity" if "base_quantity" in df.columns else "quantity"
         return float(df[metric].sum())
 
-    def condition_line_names(self, wanted: set[str]) -> set[str]:
-        """Normalized line-product names carrying one of the conditions."""
-        conditions = self.product_conditions or {}
-        names = {key for key, cond in conditions.items() if cond in wanted}
-        if self.lines.empty or "product" not in self.lines.columns:
-            return names
-        line_keys = set(self.lines["product"].map(norm_key).dropna())
-        return {key for key in names if key in line_keys or True}
-
     def lines_for_conditions(self, period, wanted: set[str]):
         df = self.filtered_lines(period)
         if df.empty:
@@ -1880,6 +1932,75 @@ class Dataset:
         if lines.empty:
             return None
         return float(lines["line_amount"].sum())
+
+    def _column_values_present(self, match) -> bool:
+        """True when a column matching `match` has real (non-blank/nonzero)."""
+        frames = []
+        if self.orders is not None and not self.orders.empty:
+            frames.append(self.orders)
+        if self.lines is not None and not self.lines.empty:
+            frames.append(self.lines)
+        for table in self.tables:
+            frames.append(table.df)
+        for df in frames:
+            for col in df.columns:
+                if not match(norm_key(str(col))):
+                    continue
+                series = df[col].astype(str).str.strip()
+                series = series[
+                    ~series.isin(["", "nan", "None", "none", "-", "0", "0.0"])
+                ]
+                if series.empty:
+                    continue
+                number = parse_number(series.iloc[0])
+                if number is not None:
+                    if (series.map(parse_number).fillna(0) != 0).any():
+                        return True
+                    continue
+                return True
+        return False
+
+    def has_gender_data(self) -> bool:
+        return bool(self.gender_of_customer)
+
+    def has_voucher_data(self) -> bool:
+        """True when a voucher/discount amount column carries real values."""
+        return self._column_values_present(
+            lambda key: (
+                ("voucher" in key or "chiet khau" in key) and "chuong trinh" not in key
+            )
+        )
+
+    def has_shipping_data(self) -> bool:
+        return self._column_values_present(
+            lambda key: (
+                ("ship" in key and ("phi" in key or "tien" in key or "cuoc" in key))
+                or key in {"phi_ship", "phi ship"}
+            )
+        )
+
+    def has_address_data(self) -> bool:
+        return self._column_values_present(
+            lambda key: (
+                "dia chi" in key
+                or key in {"addr", "address", "dia_chi"}
+                or ("duong" in key and "pho" in key)
+            )
+        )
+
+    def has_rating_data(self) -> bool:
+        return self._column_values_present(
+            lambda key: "danh gia" in key or "rating" in key or "review" in key
+        )
+
+    def has_customer_linkage(self, period=None) -> bool:
+        df = self.valid_orders(period)
+        if df.empty:
+            return False
+        for col in ("customer", "customer_id"):
+            if col in df.columns and (df[col].astype(str).str.strip() != "").any():
+                return True
+        return False
 
     # --------------------------------------------------------------- purchases
     @classmethod
