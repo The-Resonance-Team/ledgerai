@@ -120,7 +120,9 @@ def _word_run_next(a: str, b: str) -> tuple[int, int, str | None]:
 
 def match_unit(question: str, ds: Dataset, min_len: int = 2) -> str | None:
     if ds.lines.empty or "unit" not in ds.lines.columns:
-        return None
+        lines_empty = True
+    else:
+        lines_empty = False
     q = norm_key(question)
     # "bao nhiêu" is a question word, not the unit "bao" (bag).
     q = re.sub(r"\b(?:bao\s*nhieu|bao\s*nhiu|bnhiu|bao\s*tien)\b", " ", q)
@@ -138,15 +140,30 @@ def match_unit(question: str, ds: Dataset, min_len: int = 2) -> str | None:
         "thang",
         "ngay",
     }
-    for name in ds.lines["unit"].dropna().unique():
-        key = norm_key(name)
-        if not key or len(key) < min_len or key in generic:
-            continue
-        if (
-            re.search(rf"(?<![a-z0-9]){re.escape(key)}(?![a-z0-9])", q)
-            and len(key) > best_len
-        ):
-            best, best_len = str(name), len(key)
+    seen: set[str] = set()
+    if not lines_empty:
+        for name in ds.lines["unit"].dropna().unique():
+            key = norm_key(name)
+            if not key or len(key) < min_len or key in generic or key in seen:
+                continue
+            seen.add(key)
+            if (
+                re.search(rf"(?<![a-z0-9]){re.escape(key)}(?![a-z0-9])", q)
+                and len(key) > best_len
+            ):
+                best, best_len = str(name), len(key)
+    # Product masters carry the unit when order lines do not (dev_007).
+    if not ds.products.empty and "unit" in ds.products.columns:
+        for name in ds.products["unit"].dropna().unique():
+            key = norm_key(name)
+            if not key or len(key) < min_len or key in generic or key in seen:
+                continue
+            seen.add(key)
+            if (
+                re.search(rf"(?<![a-z0-9]){re.escape(key)}(?![a-z0-9])", q)
+                and len(key) > best_len
+            ):
+                best, best_len = str(name), len(key)
     return best
 
 

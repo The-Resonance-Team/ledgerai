@@ -148,7 +148,7 @@ def _round_money(value: float) -> int:
     return int(round(value))
 
 
-_AMOUNT = r"(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\s*(k|nghin|nghìn|tr|trieu|triệu)?"
+_AMOUNT = r"(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\s*(k|nghin|nghìn|tr|trieu|triệu|cu)?"
 
 
 def _amount_value(text: str, start: int) -> float | None:
@@ -312,6 +312,10 @@ class BaselineRouter:
         raw = re.sub(r"\b(roa)\b", "ra", raw)
         raw = re.sub(r"\b(laix)\b", "lai", raw)
         raw = re.sub(r"\b(nhieuf)\b", "nhieu", raw)
+        raw = re.sub(r"\b(nhieeu|nhieuu)\b", "nhieu", raw)
+        raw = re.sub(r"\b(nhan dien|nhan diem)\b", "nhan vien", raw)
+        raw = re.sub(r"\bwan\b", "quan", raw)
+        raw = re.sub(r"\bbna\b", "ban", raw)
         # "bao nhiêu tền" (tền = tiền typo); "tên" alone also means name,
         # so only normalize right after a quantity word.
         raw = re.sub(r"\b(bao nhieu|bnhiu|bnhieu|bn)\s+ten\b", r"\1 tien", raw)
@@ -1190,6 +1194,8 @@ class BaselineRouter:
                 "tien ban",
                 "dong",
                 "ban duoc",
+                "ban dc",
+                "ban ra",
                 "thu ve",
             )
             and not _has(t, "nhap hang")
@@ -1203,7 +1209,25 @@ class BaselineRouter:
             if lower is not None or upper is not None:
                 if period is None:
                     return Answer("abstain", plan="threshold_count")
-                if _has(t, "bao nhieu ngay", "may ngay", "so ngay", "nhieu ngay"):
+                # Day words include "bữa" (bua) for eateries; count words
+                # include short forms "bn", "bnhiu". Order questions
+                # ("bao nhieu don ... tu X") belong to the branch below.
+                if (
+                    _has(t, "ngay", "bua", "hom")
+                    and _has(
+                        t,
+                        "bao nhieu",
+                        "bao nhiu",
+                        "bnhiu",
+                        "bn",
+                        "may",
+                        "so",
+                        "nhieu",
+                        "nhiu",
+                    )
+                    and not _words(t, "don", "bill")
+                    and not _has(t, "hoa don")
+                ):
                     return Answer(
                         "number",
                         ds.count_days_by_revenue(period, lower, upper),
@@ -1223,7 +1247,7 @@ class BaselineRouter:
             return Answer("abstain", plan="list_other")
 
         # 1. "Ngày nào / tháng nào / hôm nào ... cao nhất" -> date.
-        if _has(t, "ngay nao", "hom nao") and _has(
+        if _has(t, "ngay nao", "hom nao", "bua nao") and _has(
             t,
             "cao nhat",
             "nhieu nhat",
@@ -1578,6 +1602,23 @@ class BaselineRouter:
                     "number",
                     ds.products_in_orders(period, int(match.group(1))),
                     confidence=0.8,
+                    plan="products_in_orders",
+                )
+        # 4a1. Paraphrases without "xuất hiện": "nằm trong / góp mặt trong /
+        # được gọi trong ít nhất N đơn" (public). Product words + N đơn, no
+        # customer words (those belong to top_customer_orders).
+        if (
+            period is not None
+            and _has(t, "mat hang", "mon", "san pham", "hang hoa")
+            and not _has(t, "khach", "khach hang")
+            and not _has(t, "tien", "doanh thu", "dthu")
+        ):
+            match = re.search(r"(?:tu|it nhat)\s*(\d{1,4})\s*don", raw)
+            if match and _has(t, "trong", "o", "tai", "don"):
+                return Answer(
+                    "number",
+                    ds.products_in_orders(period, int(match.group(1))),
+                    confidence=0.75,
                     plan="products_in_orders",
                 )
 
@@ -2015,9 +2056,10 @@ class BaselineRouter:
                         )
 
         # 4b2. Quantity by unit when no product is named.
+        # Bare "nhieu/nhiu" also asks quantity ("ban ra duoc nhieu lon").
         if (
             period is not None
-            and _has(t, "bao nhieu", "may", "bnhiu", "bao nhiu")
+            and _has(t, "bao nhieu", "bao nhiu", "may", "bnhiu", "nhieu", "nhiu")
             and not _has(
                 t,
                 "tien",
@@ -2238,10 +2280,14 @@ class BaselineRouter:
 
         # 6c. Employee revenue, ticket counts and top seller.
         if period is not None:
-            is_employee_q = _has(t, "nhan vien", "nv ") or _words(t, "tho")
+            is_employee_q = (
+                _has(t, "nhan vien", "nv ")
+                or _words(t, "tho")
+                or re.search(r"\bnv\s*0*\d+", t) is not None
+            )
             if (
                 is_employee_q
-                and _has(t, "ai", "nao")
+                and (_has(t, "ai", "nao") or _words(t, "mo"))
                 and _has(t, "nhat", "cao nhat", "gioi nhat", "cham chi")
                 and not _has(t, "it nhat", "thap nhat")
             ):
@@ -2281,6 +2327,106 @@ class BaselineRouter:
                         confidence=0.8,
                         plan="employee_revenue",
                     )
+
+        # 6c2. Repair-shop tickets (Sua xe rulebook §6). The SoSuaXe ledger
+        # also feeds the generic orders path, so this branch runs first.
+        if ds.has_repair_data() and period is not None:
+            # Average per weekday ("trung binh moi thu Tu ... luot xe").
+            if _has(t, "trung binh", "binh quan") and _has(
+                t, "thu ", "chu nhat", "chu nhat", "cn "
+            ):
+                weekday = None
+                m = re.search(r"thu\s*([2345678])", t)
+                if m:
+                    weekday = {"2": 0, "3": 1, "4": 2, "5": 3, "6": 4, "7": 5, "8": 6}[
+                        m.group(1)
+                    ]
+                else:
+                    for word, day in (
+                        ("hai", 0),
+                        ("ba", 1),
+                        ("tu", 2),
+                        ("nam", 3),
+                        ("sau", 4),
+                        ("bay", 5),
+                    ):
+                        if re.search(rf"thu\s*{word}\b", t):
+                            weekday = day
+                            break
+                if weekday is None and _has(t, "chu nhat", "chu nhat"):
+                    weekday = 6
+                if weekday is not None and _has(t, "luot", "phieu", "xe"):
+                    value = ds.repair_avg_per_weekday(period, weekday)
+                    if value is not None:
+                        return Answer(
+                            "number",
+                            value,
+                            confidence=0.75,
+                            plan="repair_avg_weekday",
+                        )
+            # Repeat-visitor plates ("tu 2 lan tro len", "khach quen").
+            if (
+                (_has(t, "2 lan") and _has(t, "tro len"))
+                or _has(t, "khach quen", "xe quen", "tu 2 lan")
+            ) and _has(t, "xe", "chiec", "bien so"):
+                return Answer(
+                    "number",
+                    ds.repair_repeat_plates(period),
+                    confidence=0.8,
+                    plan="repair_repeat_plates",
+                )
+            # Distinct plates of one vehicle line ("SH Mode khac nhau").
+            if _has(t, "chiec", "xe", "bien so") and _has(
+                t, "bao nhieu", "bao nhiu", "bnhiu", "bn", "may", "nhieu"
+            ):
+                line_key = ds.repair_line_from_question(question)
+                if line_key is not None:
+                    return Answer(
+                        "number",
+                        ds.repair_distinct_plates(period, line_key),
+                        confidence=0.8,
+                        plan="repair_distinct_plates",
+                    )
+            # Top vehicle line by repair revenue ("dong xe nao ... nhieu tien nhat").
+            if (
+                (
+                    _has(t, "dong xe", "dong xe", "loai xe")
+                    or (_has(t, "xe") and (_has(t, "nao", "ai") or _words(t, "mo")))
+                )
+                and _has(t, "nhat")
+                and _has(t, "tien", "tien sua", "dem lai")
+            ):
+                line = ds.top_repair_line(period)
+                if line:
+                    return Answer(
+                        "string",
+                        line,
+                        confidence=0.75,
+                        plan="top_repair_line",
+                    )
+                return Answer("abstain", plan="top_repair_line")
+            # Plain ticket counts ("dem phieu sua xe duoc may phieu").
+            if (
+                _has(t, "phieu", "luot")
+                and _has(t, "sua", "xe", "tho")
+                and _has(
+                    t,
+                    "bao nhieu",
+                    "bao nhiu",
+                    "bnhiu",
+                    "bn",
+                    "may",
+                    "nhieu",
+                    "nhiu",
+                    "dem",
+                )
+            ):
+                return Answer(
+                    "number",
+                    ds.repair_count(period),
+                    confidence=0.85,
+                    plan="repair_ticket_count",
+                )
 
         # 6d. Service ticket count by job keyword ("thay dầu láp ...").
         if (
@@ -2443,6 +2589,7 @@ class BaselineRouter:
             )
 
         # 9. Order count.
+        # "o do" (order) is the Southern pronunciation spelling.
         if _has(
             t,
             "so don",
@@ -2456,6 +2603,9 @@ class BaselineRouter:
             "dh",
             "so luong don",
             "so hoa don",
+            "bao nhieu o do",
+            "may o do",
+            "o do",
         ):
             if period is None:
                 return Answer("abstain", plan="order_count")
@@ -2563,12 +2713,27 @@ class BaselineRouter:
             "bnhieu tien",
             "bao nhieu tien",
             "bao nhiu tien",
+            "nhieu tien",
         ) or (
             _has(t, "ban duoc", "ban dc", "ban ra")
-            and _has(t, "bao nhieu tien", "bao nhiu tien", "bnhiu tien", "bn tien")
+            and _has(
+                t,
+                "bao nhieu tien",
+                "bao nhiu tien",
+                "bnhiu tien",
+                "bn tien",
+                "nhieu tien",
+                "nhiu tien",
+            )
         ):
             if period is None:
                 return Answer("abstain", plan="revenue")
+            # Ranking questions ("tho mo ... nhat", "dong xe mo ... nhat")
+            # belong to their ranking branches, not to total revenue.
+            if _has(t, "nhat") and (
+                _words(t, "tho", "mo") or _has(t, "dong xe", "loai xe")
+            ):
+                return Answer("abstain", plan="revenue_ranking_guard")
             if _has(t, "nhap", "mua vao", "tien nhap"):
                 return Answer("abstain", plan="revenue_purchase_guard")
             if _has(t, *_FILTER_WORDS):

@@ -70,6 +70,9 @@ def parse_number(value: object) -> float | None:
         multiplier = 1_000.0
     elif lower.endswith("tr") or "triệu" in lower or "trieu" in lower:
         multiplier = 1_000_000.0
+    elif lower.endswith("cu"):
+        # Slang "củ" (normalized to "cu") means one million VND.
+        multiplier = 1_000_000.0
     negative = False
     if s.startswith("(") and s.endswith(")"):
         negative = True

@@ -212,6 +212,7 @@ class Dataset:
     product_aliases: dict = None  # type: ignore[assignment]
     product_conditions: dict = None  # type: ignore[assignment]
     gender_of_customer: dict = None  # type: ignore[assignment]
+    repair_tickets: pd.DataFrame = None  # type: ignore[assignment]
 
     @classmethod
     def load(cls, biz_dir: Path) -> "Dataset":
@@ -531,6 +532,7 @@ class Dataset:
         ds.product_aliases = master_aliases
         ds.product_conditions = master_conditions
         ds.gender_of_customer = gender_map
+        ds.repair_tickets = cls._build_repairs(tables, employees)
         return ds
 
     # --------------------------------------------------------------- ledgers
@@ -646,6 +648,287 @@ class Dataset:
         if not frames:
             return pd.DataFrame(columns=["employee", "rate"])
         return pd.concat(frames, ignore_index=True)
+
+    # Repair-shop tickets (Sua xe rulebook §6). Any table with a vehicle
+    # column ('xe', 'bien so') plus date and amount columns qualifies,
+    # whatever its inferred role. Plate pattern: 59B6-219.16.
+    PLATE_RE = re.compile(r"\b\d{2}[A-Z]\d(?:-\d{3}\.\d{2})?\b")
+
+    @classmethod
+    def _build_repairs(cls, tables, employees) -> pd.DataFrame:
+        frames = []
+        for table in tables:
+            df = table.df
+            if df.empty:
+                continue
+            norm_cols = {norm_key(str(c)): c for c in df.columns}
+            vehicle_col = next(
+                (
+                    c
+                    for key, c in norm_cols.items()
+                    if key in {"xe", "bien so", "bien so xe", "xe bien so"}
+                    or (key.startswith("xe") and len(key) <= 4)
+                ),
+                None,
+            )
+            if vehicle_col is None:
+                continue
+            date_col = next(
+                (c for key, c in norm_cols.items() if "ngay" in key),
+                None,
+            )
+            amount_col = next(
+                (
+                    c
+                    for key, c in norm_cols.items()
+                    if key in {"tien", "tong tien", "thanh tien", "amount"}
+                ),
+                None,
+            )
+            if date_col is None or amount_col is None:
+                continue
+            mech_col = next(
+                (
+                    c
+                    for key, c in norm_cols.items()
+                    if key in {"tho", "ten tho", "nhan vien", "ky thuat"}
+                ),
+                None,
+            )
+            job_col = next(
+                (c for key, c in norm_cols.items() if "lam gi" in key),
+                None,
+            )
+            note_col = next(
+                (c for key, c in norm_cols.items() if "ghi chu" in key),
+                None,
+            )
+            out = pd.DataFrame(index=df.index)
+            out["date"] = _to_date(df[date_col])
+            out["mechanic"] = df[mech_col].astype(str).str.strip() if mech_col else ""
+            out["vehicle_raw"] = df[vehicle_col].astype(str).str.strip()
+            out["job"] = df[job_col].astype(str).str.strip() if job_col else ""
+            out["note"] = df[note_col].astype(str).str.strip() if note_col else ""
+            out["amount"] = _to_num(df[amount_col])
+            frames.append(out)
+        if not frames:
+            return pd.DataFrame(
+                columns=[
+                    "date",
+                    "mechanic",
+                    "mech_token",
+                    "mech_full",
+                    "line",
+                    "line_key",
+                    "plate",
+                    "job",
+                    "amount",
+                    "warranty",
+                ]
+            )
+        tickets = pd.concat(frames, ignore_index=True)
+        tickets["mech_token"] = tickets["mechanic"].map(
+            lambda v: norm_key(v).split()[-1] if norm_key(v) else ""
+        )
+        # Mechanic full names from the employee master (last-token match).
+        rate_by_token: dict[str, tuple[str, float]] = {}
+        if employees is not None and not employees.empty:
+            for _, row in employees.iterrows():
+                token = (
+                    norm_key(row["employee"]).split()[-1]
+                    if norm_key(row["employee"])
+                    else ""
+                )
+                if token and token not in rate_by_token:
+                    rate_by_token[token] = (str(row["employee"]), row["rate"])
+        tickets["mech_full"] = tickets["mech_token"].map(
+            lambda tok: rate_by_token.get(tok, (None, None))[0]
+        )
+        # Split "dòng xe + biển số": line = text before the plate.
+        lines, keys, plates = [], [], []
+        for raw_vehicle in tickets["vehicle_raw"]:
+            text = str(raw_vehicle).strip()
+            match = cls.PLATE_RE.search(text.upper())
+            if match:
+                plate = match.group(0)
+                line = text[: match.start()].strip() or text
+            else:
+                plate, line = "", text
+            lines.append(line)
+            keys.append(re.sub(r"\s+", "", norm_key(line)))
+            plates.append(plate)
+        tickets["line"] = lines
+        tickets["line_key"] = keys
+        tickets["plate"] = plates
+        # Dòng xe: spellings differing only by case or abbreviation are one
+        # dòng (rulebook §6: "Alpha" = "Wave Alpha", "AB" = "Air Blade").
+        # Merge a shorter key into the most frequent longer key containing
+        # it, plus initials ("Air Blade" -> "AB").
+        from collections import Counter as _Counter
+
+        counts = _Counter(keys)
+        parent: dict[str, str] = {}
+        for short in sorted(set(keys), key=len):
+            if len(short) < 2:
+                continue
+            candidates = [k for k in counts if len(k) > len(short) and short in k]
+            if candidates:
+                parent[short] = max(candidates, key=lambda k: counts[k])
+        for raw_line, key in zip(lines, keys):
+            words = [w for w in norm_key(raw_line).split() if w[:1].isalpha()]
+            initials = "".join(w[0] for w in words)
+            if (
+                len(initials) >= 2
+                and initials != key
+                and initials in counts
+                and initials not in parent
+            ):
+                parent[initials] = key
+
+        def _canon(key: str) -> str:
+            seen = set()
+            while key in parent and key not in seen:
+                seen.add(key)
+                key = parent[key]
+            return key
+
+        tickets["line_canon"] = [_canon(k) for k in keys]
+        combined = (tickets["job"].fillna("") + " " + tickets["note"].fillna("")).map(
+            norm_key
+        )
+        tickets["warranty"] = combined.str.contains("bao hanh")
+        return tickets
+
+    def _repair_in_period(self, period) -> "pd.DataFrame":
+        df = self.repair_tickets
+        if df is None or df.empty:
+            return df
+        if period is not None and "date" in df.columns and df["date"].notna().any():
+            df = df[df["date"].apply(period.contains)]
+        return df
+
+    def has_repair_data(self) -> bool:
+        return self.repair_tickets is not None and not self.repair_tickets.empty
+
+    def repair_count(self, period=None, mechanic_token: str | None = None) -> int:
+        df = self._repair_in_period(period)
+        if df is None or df.empty:
+            return 0
+        if mechanic_token:
+            df = df[df["mech_token"] == mechanic_token]
+        return int(len(df))
+
+    def repair_revenue(self, period=None, mechanic_token=None, line_key=None) -> float:
+        df = self._repair_in_period(period)
+        if df is None or df.empty:
+            return 0.0
+        if mechanic_token:
+            df = df[df["mech_token"] == mechanic_token]
+        if line_key:
+            col = "line_canon" if "line_canon" in df.columns else "line_key"
+            df = df[df[col] == line_key]
+        return float(df["amount"].fillna(0).sum())
+
+    def top_repair_mechanic(self, period=None, by: str = "count") -> str | None:
+        df = self._repair_in_period(period)
+        if df is None or df.empty:
+            return None
+        df = df[df["mech_token"] != ""]
+        if df.empty:
+            return None
+        if by == "revenue":
+            grouped = df.groupby("mech_token")["amount"].sum()
+        else:
+            grouped = df.groupby("mech_token").size()
+        if grouped.empty:
+            return None
+        token = grouped.sort_values(ascending=False).index[0]
+        full = df[df["mech_token"] == token]["mech_full"].dropna()
+        if not full.empty:
+            return str(full.iloc[0])
+        raw = df[df["mech_token"] == token]["mechanic"]
+        return str(raw.iloc[0]) if not raw.empty else None
+
+    def top_repair_line(self, period=None) -> str | None:
+        df = self._repair_in_period(period)
+        if df is None or df.empty:
+            return None
+        key_col = "line_canon" if "line_canon" in df.columns else "line_key"
+        df = df[df[key_col] != ""]
+        if df.empty:
+            return None
+        grouped = df.groupby(key_col)["amount"].sum()
+        if grouped.empty:
+            return None
+        key = grouped.sort_values(ascending=False).index[0]
+        raw = df[df[key_col] == key]["line"]
+        if raw.empty:
+            return None
+        # Most frequent spelling of the winning dòng.
+        return str(raw.value_counts().index[0])
+
+    def repair_line_from_question(self, question: str) -> str | None:
+        """Longest vehicle-line key from the repair ledger in the question."""
+        if not self.has_repair_data():
+            return None
+        q = re.sub(r"\s+", "", norm_key(question))
+        best: str | None = None
+        best_len = 0
+        tickets = self.repair_tickets
+        canon_of = (
+            dict(zip(tickets["line_key"], tickets["line_canon"]))
+            if "line_canon" in tickets.columns
+            else {}
+        )
+        for key in tickets["line_key"].dropna().unique():
+            if len(key) >= 4 and key in q and len(key) > best_len:
+                best, best_len = str(key), len(key)
+        if best is None:
+            return None
+        return canon_of.get(best, best)
+
+    def repair_distinct_plates(self, period=None, line_key=None) -> int:
+        df = self._repair_in_period(period)
+        if df is None or df.empty:
+            return 0
+        if line_key:
+            col = "line_canon" if "line_canon" in df.columns else "line_key"
+            df = df[df[col] == line_key]
+        plates = df["plate"].astype(str).str.strip()
+        return int(plates[plates != ""].nunique())
+
+    def repair_repeat_plates(self, period=None) -> int:
+        """Plates with 2+ paid tickets in the period (khách quen)."""
+        df = self._repair_in_period(period)
+        if df is None or df.empty:
+            return 0
+        paid = df[~df["warranty"]]
+        plates = paid["plate"].astype(str).str.strip()
+        paid = paid[plates != ""]
+        if paid.empty:
+            return 0
+        counts = paid.groupby(paid["plate"]).size()
+        return int((counts >= 2).sum())
+
+    def repair_avg_per_weekday(self, period, weekday: int) -> float | None:
+        """Tickets (incl. warranty) on a weekday / number of such days."""
+        from datetime import timedelta
+
+        df = self._repair_in_period(period)
+        if period is None:
+            return None
+        dates = [
+            period.start + timedelta(days=i)
+            for i in range((period.end - period.start).days + 1)
+        ]
+        matching = [d for d in dates if d.weekday() == weekday]
+        if not matching:
+            return None
+        count = 0
+        if df is not None and not df.empty:
+            valid = df["date"].apply(lambda v: _is_date(v) and v.weekday() == weekday)
+            count = int(valid.sum())
+        return round(count / len(matching), 2)
 
     @classmethod
     def _build_expenses(cls, tables, profiles, roles) -> pd.DataFrame:
@@ -3500,7 +3783,14 @@ class Dataset:
             if "giao hang" not in name and "delivery" not in name:
                 continue
             columns = {norm_key(column): column for column in table.df.columns}
-            date_col = next((columns[key] for key in columns if "ngay" in key), None)
+            date_col = next(
+                (
+                    columns[key]
+                    for key in columns
+                    if "ngay" in key or "thoi gian" in key or "time" in key
+                ),
+                None,
+            )
             if not date_col:
                 continue
             trip_col = next(
@@ -3519,7 +3809,8 @@ class Dataset:
                 (
                     columns[key]
                     for key in columns
-                    if key.startswith("ma ") and ("bill" in key or "don" in key)
+                    if (key.startswith("ma ") or key.startswith("so "))
+                    and ("bill" in key or "don" in key)
                 ),
                 None,
             )
