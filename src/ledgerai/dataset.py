@@ -3750,8 +3750,7 @@ class Dataset:
         values = frame.groupby("_key")[metric].sum()
         ranked = sorted(
             ((str(display.loc[key]), float(value)) for key, value in values.items()),
-            key=lambda item: item[1],
-            reverse=True,
+            key=lambda item: (-item[1], item[0]),
         )
         return ranked[:k]
 
