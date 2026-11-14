@@ -1991,15 +1991,23 @@ class Dataset:
             if not pack_col:
                 for candidate in df.columns:
                     key = norm_key(candidate)
-                    if "don vi quy doi" in key or key in {"dv lon", "don vi lon"}:
+                    if "don vi quy doi" in key or key in {
+                        "dv lon",
+                        "don vi lon",
+                        "don vi",
+                    }:
                         pack_col = candidate
                         break
             if not factor_col:
                 for candidate in df.columns:
                     key = norm_key(candidate)
-                    if "ti le" in key or "he so" in key:
+                    if "ti le" in key or "he so" in key or key == "bang":
                         factor_col = candidate
                         break
+            if not pack_col and cols.get("unit"):
+                pack_col = cols.get("unit")
+            if not factor_col and cols.get("number"):
+                factor_col = cols.get("number")
             if not base_col:
                 for candidate in df.columns:
                     key = norm_key(candidate)
