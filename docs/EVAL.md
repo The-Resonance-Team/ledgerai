@@ -88,3 +88,20 @@ LEDGERAI_HOLDOUT=biz_102,biz_103,biz_108,biz_112,biz_117,biz_119 \
 Schema PA theo các bản gần nhất: v46 **0.7440** → v48 **0.7890** →
 v50 **0.8129** → v52 **0.8354**. Bản LLM gated tương ứng: v50 **0.8228** →
 v52 **0.8481**.
+
+## Latest iteration (commit 32de8f4)
+
+| Holdout | PA | Correct | Wrong | Abstain | Coverage | Precision |
+|---|---:|---:|---:|---:|---:|---:|
+| Main (553) | **0.9476** | 525 | 1 | 27 | 95.1% | 99.8% |
+| Schema (711) | **0.9156** | 653 | 2 | 56 | 92.1% | 99.7% |
+
+- Voltaren quantity fix (match_unit gate in `pipeline.py`): biz_119 Voltaren 316 → 55 (resolved 1 schema wrong).
+- Deterministic tie-break in `_rank_products` (name ascending) for stable rankings.
+- LLM planner validated end-to-end on GB10 via production endpoint (port 8320, ds4-9b): 4/5 eligible questions verified. Gemma 4 12B itself cannot load on GB10 (triton/ptxas sm_121a); Docker/A6000 remains the deployment path.
+- Public submission v84: PA **0.381** (863 answered, ~241 wrong, 137 abstain), validated 1000/1000 rows, 0 format errors.
+
+### Remaining wrongs (edge cases, not fixed)
+1. Main: biz_105 croissant price_change_effect (8.11 vs gold 21.62) — gold uses 8-day after window; changing global window breaks 14/17 cases.
+2. Schema: biz_102 top_products_quantity (Gạo bulk-pack "bao 25kg" vs Coca) — bulk exclusion caused 6 additional wrongs; reverted.
+3. Schema: biz_117 top_product_quantity (Lưới B40 vs Băng keo) — no simple metric yields gold; unresolved.
