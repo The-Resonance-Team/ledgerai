@@ -2143,7 +2143,7 @@ class BaselineRouter:
                 )
 
         # 4b. Product-aware revenue and quantity.
-        from .verifier import match_product
+        from .verifier import match_product, match_unit
 
         product = match_product(question, ds)
         if product and period is not None:
@@ -2278,7 +2278,9 @@ class BaselineRouter:
                 "bo",
                 "chiec",
             )
-            if not price_inventory and quantity_words and (has_unit or "so luong" in t):
+            if not price_inventory and quantity_words and (
+                has_unit or "so luong" in t or match_unit(question, ds) is not None
+            ):
                 value = ds.product_quantity(period, product=product)
                 if value is not None:
                     return Answer(
