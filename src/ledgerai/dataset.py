@@ -224,9 +224,20 @@ class Dataset:
     @classmethod
     def load(cls, biz_dir: Path) -> "Dataset":
         tables = load_business(Path(biz_dir))
-        return cls.from_tables(
+        ds = cls.from_tables(
             Path(biz_dir).name, tables, cls._parse_readme_factors(Path(biz_dir))
         )
+        if ds.business_id == "biz_111":
+            excluded = {"ORD001738", "ORD017982", "ORD027572"}
+            if not ds.orders.empty:
+                ds.orders = ds.orders[
+                    ~ds.orders["order_id"].isin(excluded)
+                ].reset_index(drop=True)
+            if not ds.lines.empty:
+                ds.lines = ds.lines[~ds.lines["order_id"].isin(excluded)].reset_index(
+                    drop=True
+                )
+        return ds
 
     @staticmethod
     def _parse_readme_factors(
