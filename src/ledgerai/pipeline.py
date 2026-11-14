@@ -145,7 +145,9 @@ def _count_k(text: str) -> int:
 
 
 def _round_money(value: float) -> int:
-    return int(round(value))
+    from decimal import Decimal, ROUND_HALF_UP
+
+    return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 _AMOUNT = r"(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\s*(k|nghin|nghìn|tr|trieu|triệu|cu)?"
