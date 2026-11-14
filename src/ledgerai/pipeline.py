@@ -511,19 +511,6 @@ class BaselineRouter:
         if (
             _has(t, "chiem", "ti trong", "dong gop")
             and period is not None
-            and not _has(
-                t,
-                "tra bang",
-                "thanh toan",
-                "phuong thuc tt",
-                "tm",
-                "cash",
-                "cod",
-                "vi dien tu",
-                "chuyen khoan",
-                "tien mat",
-                "ghi no",
-            )
             and not (
                 _has(t, "khach", "khach hang")
                 and _words(
@@ -674,16 +661,16 @@ class BaselineRouter:
         if (
             len(payment_methods) >= 2
             and period is not None
-            and not _has(
+            and _has(
                 t,
-                "chiem",
-                "phan tram",
-                "hon",
-                "kem",
-                "so voi",
-                "so sanh",
-                "tang",
-                "giam",
+                "moi loai",
+                "moi ben",
+                "tung loai",
+                "tung ben",
+                "tung hinh thuc",
+                "moi hinh thuc",
+                " va ",
+                "lan luot",
             )
         ):
             # The reference lists values in the order the methods appear in

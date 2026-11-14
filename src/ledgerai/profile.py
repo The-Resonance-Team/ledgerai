@@ -372,11 +372,7 @@ def infer_table_role(table: TableProfile) -> str:
         "ti le quy doi" in column_keys
         or "he so quy doi" in column_keys
         or "factor" in roles
-        or (
-            "quy" in words
-            and "doi" in words
-            and ("product" in roles or "product_id" in roles)
-        )
+        or ("quy" in words and "doi" in words and "product" in roles)
     ):
         if "product_id" in roles or "product" in roles:
             return "conversions"
