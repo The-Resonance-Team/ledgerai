@@ -32,6 +32,45 @@ def _month_end(year: int, month: int) -> date:
     return date(year, month, calendar.monthrange(year, month)[1])
 
 
+# Lunar New Year (mùng 1 Tết). The gold convention for "dịp Tết" is the
+# 17-day window [Tết − 7, Tết + 9] (23 tháng Chạp → mùng 9 Tết), verified
+# exact against train gold on both YoY and prior-window comparisons.
+TET_DATES = {
+    2024: date(2024, 2, 10),
+    2025: date(2025, 1, 29),
+    2026: date(2026, 2, 17),
+}
+
+TET_PRE_DAYS = 7
+TET_POST_DAYS = 9
+
+
+def tet_period(year: int) -> Period | None:
+    """The 17-day Tết season window for a lunar year."""
+    new_year = TET_DATES.get(year)
+    if new_year is None:
+        return None
+    return Period(
+        new_year - timedelta(days=TET_PRE_DAYS),
+        new_year + timedelta(days=TET_POST_DAYS),
+        f"dịp tết {year}",
+    )
+
+
+def is_tet_period(period: Period | None) -> bool:
+    if period is None:
+        return False
+    for year in TET_DATES:
+        expected = tet_period(year)
+        if (
+            expected is not None
+            and period.start == expected.start
+            and period.end == expected.end
+        ):
+            return True
+    return False
+
+
 def _month_range(year: int, month: int, today: date, clamp: bool = False) -> Period:
     start = date(year, month, 1)
     end = _month_end(year, month)
@@ -98,13 +137,42 @@ def _parse_month_year(text: str, today: date) -> tuple[int, int] | None:
 
 
 def extract_month_refs(text: str, today: date) -> list[tuple[int, int]]:
-    """Find all month references such as '4/2026', 'tháng 5/2026'."""
-    refs: list[tuple[int, int]] = []
-    for m in re.finditer(r"(?:thang\s*)?(\d{1,2})\s*/\s*(\d{4})", text):
-        month, year = int(m.group(1)), int(m.group(2))
+    """Find all month references such as '4/2026', 'tháng 5/2026'.
+
+    Also accepts dash separators ('11-2025'), 2-digit years ('2/26'),
+    and bare 'tháng X' mentions, which take the year of the nearest dated
+    reference in the same string (question lists like 'th8, th9, th10/2025').
+    """
+    dated: list[tuple[int, int, int]] = []  # (pos, year, month)
+    spans: list[tuple[int, int]] = []
+    for m in re.finditer(
+        r"(?:thang\s*)?(\d{1,2})\s*[/\-]\s*(\d{4}|\d{2})(?!\d)(?!\s*[/\-]\s*\d{4})",
+        text,
+    ):
+        month, year_raw = int(m.group(1)), m.group(2)
+        year = int(year_raw) if len(year_raw) == 4 else 2000 + int(year_raw)
         if 1 <= month <= 12:
-            refs.append((year, month))
-    return refs
+            dated.append((m.start(), year, month))
+            spans.append((m.start(), m.end()))
+    ordered: list[tuple[int, tuple[int, int]]] = [
+        (pos, (year, month)) for pos, year, month in dated
+    ]
+    for m in re.finditer(r"th(?:ang)?\s*(\d{1,2})(?![\d\s]*[/\-])", text):
+        month = int(m.group(1))
+        if not 1 <= month <= 12:
+            continue
+        # Skip months already inside a dated reference span.
+        if any(start <= m.start() < end for start, end in spans):
+            continue
+        if dated:
+            year = min(dated, key=lambda item: abs(item[0] - m.start()))[1]
+        else:
+            year = today.year
+            if date(year, month, 1) > today:
+                year -= 1
+        ordered.append((m.start(), (year, month)))
+    ordered.sort(key=lambda item: item[0])
+    return [ym for _, ym in ordered]
 
 
 def resolve_period(text: str, as_of: date) -> Period | None:
@@ -119,12 +187,21 @@ def resolve_period(text: str, as_of: date) -> Period | None:
     t = re.sub(r"\btuan trc\b|\btuan truoc\b|\btuan roi\b", "tuan truoc", t)
     t = re.sub(r"\bthang trc\b|\bthang roi\b", "thang truoc", t)
     t = re.sub(r"\bthangs\b|\bthangf\b", "thang", t)
+    t = re.sub(r"\bnawm\b|\bnamf\b", "nam", t)
     t = re.sub(r"\bbua nay\b|\bhom ni\b|\bhnay\b", "hom nay", t)
     t = re.sub(r"\bthang ni\b", "thang nay", t)
     t = re.sub(r"\bth\s+nay\b", "thang nay", t)
     t = re.sub(r"\bth\s+truoc\b|\bth\s+roi\b", "thang truoc", t)
     t = re.sub(r"\bnam ni\b", "nam nay", t)
     today = as_of
+
+    # "Từ đầu tháng (này) đến hết hôm nay" is month-to-date, not today.
+    if re.search(
+        r"tu\s+(?:dau thang(?: nay)?|mung 1 thang(?: nay)?|ngay 1 thang(?: nay)?)"
+        r".*(?:den|toi)\s+(?:het\s+)?(?:hom nay|hnay|bay gio)",
+        t,
+    ):
+        return Period(date(today.year, today.month, 1), today, "từ đầu tháng")
 
     # Range "tu X den Y" / "tu X qua Y". Must run before "hom nay" so that
     # "tu ngay 1/1 den het hom nay" keeps both ends.
@@ -140,6 +217,27 @@ def resolve_period(text: str, as_of: date) -> Period | None:
     # "Tu dau nam den hom nay" is a range, not a single day.
     if "dau nam" in t or "tu dau nam" in t:
         return Period(date(today.year, 1, 1), today, "từ đầu năm")
+
+    # "Dịp Tết (năm ...)": the 17-day lunar season [Tết − 7, Tết + 9].
+    # Must run before year/month parsing ("tet 2026" has a bare year).
+    # The anchor is the CURRENT Tet when "năm nay" appears anywhere, even
+    # alongside "năm trước" (which then describes the comparison base).
+    if re.search(r"(?<![a-z0-9])tet(?![a-z0-9])", t):
+        year_match = re.search(r"\b(20[0-2]\d)\b", t)
+        if year_match:
+            year = int(year_match.group(1))
+        elif re.search(r"nam\s+nay", t):
+            year = today.year
+        elif re.search(
+            r"tet\s+(?:nam\s+)?(?:truoc|ngoai|roi|trc)|nam\s+(?:truoc|ngoai|roi)\s+(?:tet|den tet)",
+            t,
+        ):
+            year = today.year - 1
+        else:
+            year = today.year
+        tet = tet_period(year)
+        if tet is not None:
+            return tet
 
     if "hom nay" in t:
         return Period(today, today, "hôm nay")

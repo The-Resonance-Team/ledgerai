@@ -19,8 +19,8 @@
 
 | Holdout | Router PA | LLM + verifier PA | Wrong | Coverage |
 |---|---:|---:|---:|---:|
-| Main (553 câu) | **0.8915** | **0.9078** | 0 | 90.8% |
-| Schema (711 câu) | **0.8354** | **0.8481** | 1 | 85.1% |
+| Main (553 câu) | **0.9476** | n/a (LLM blocked on GB10) | 1 | 95.1% |
+| Schema (711 câu) | **0.9156** | n/a (LLM blocked on GB10) | 2 | 92.1% |
 
 Public test: 699/1000 câu trả lời, 0 lỗi format, 1 đáp án bất thường
 (lãi ròng âm — hợp lệ nếu chi phí lớn hơn lãi gộp). Public test chỉ dùng để
@@ -99,3 +99,11 @@ giống nhau giữa 2 lần chạy.
 - [ ] Theo dõi private test 20–23/11.
 - [ ] Chạy frozen solution trên private test, nộp kết quả trước 23/11 23:59.
 - [ ] Lưu log, screenshot, checksum.
+
+
+## Latest update (commit 32de8f4)
+- Voltaren quantity fix (tuyp unit gate) resolved 1 schema wrong.
+- Deterministic tie-break in _rank_products.
+- LLM planner validated end-to-end on GB10 via production endpoint (4/5 eligible verified).
+- GitHub repo: https://github.com/The-Resonance-Team/ledgerai (main + improve-v53).
+- Remaining blockers: A6000 LLM run, Google Drive upload of Docker tar.

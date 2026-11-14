@@ -54,3 +54,11 @@ Vì vậy:
 | O03 | Ai review full 3.000 QA | 13/11 | Content |
 | O04 | Ai build/test Docker | 14/11 | SWE B |
 | O05 | Ngân sách thuê GPU | 13/11 | Team |
+
+## Latest update (commit 32de8f4, 14/11/2026)
+
+- **D23**: Voltaren quantity fix — include `match_unit` in `has_unit` gate so product-named questions (e.g. "may tuyp Voltaren") route through `product_quantity` instead of counting all tubes. Resolved biz_119 Voltaren 316 → 55.
+- **D24**: Deterministic tie-break in `_rank_products` (secondary sort by name ascending) for stable rankings.
+- **D25**: LLM planner validated end-to-end on GB10 via production vLLM endpoint (port 8320, ds4-9b). Pipeline works; Gemma 4 12B cannot load on GB10 (triton/ptxas sm_121a). Docker/A6000 remains deployment path.
+- **D26**: GitHub repo created at https://github.com/The-Resonance-Team/ledgerai (main + improve-v53 branches).
+- **D27**: 3 holdout wrongs remain as edge cases (croissant price_change 8-day window, biz_102 bulk-pack exclusion, biz_117 top_product) — fixes cause regressions; left as-is.
