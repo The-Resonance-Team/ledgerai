@@ -1623,6 +1623,7 @@ class Dataset:
                     "ten goi",
                     "ho ten",
                     "kh",
+                    "khach le si",
                 }:
                     name_col = candidate
                     break
@@ -3149,7 +3150,16 @@ class Dataset:
         valid = self.lines[~self.lines["status"].isin(["cancelled", "returned"])]
         before = valid[valid["date"].apply(lambda d: _is_date(d) and d < period.start)]
         during = valid[valid["date"].apply(period.contains)]
-        return len(set(before["product"]) - set(during["product"]))
+        aliases = self.product_aliases or {}
+
+        def _canon(name):
+            key = norm_key(name)
+            return aliases.get(key, name)
+
+        return len(
+            {_canon(x) for x in before["product"]}
+            - {_canon(x) for x in during["product"]}
+        )
 
     def products_in_orders(self, period: Period | None, min_orders: int) -> int:
         """Products appearing in at least N distinct orders (rulebook §3)."""
